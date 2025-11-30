@@ -63,7 +63,7 @@ classdef ChecklistManager < handle
             %   Returns: T1, T2, T3, T4 - four table objects for the four checklists
             
             % Initialize empty tables
-            T1 = obj.createEmptyTable(8);  % Table1 starts with 8 rows (5 + 3 more)
+            T1 = obj.createEmptyTable(13);  % Table1 starts with 13 rows
             T2 = obj.createEmptyTable(12); % Table2 starts with 12 rows
             T3 = obj.createEmptyTable(12); % Table3 starts with 12 rows
             T4 = obj.createEmptyTable(5);  % Table4 should have 5 rows
@@ -100,7 +100,7 @@ classdef ChecklistManager < handle
                     idx3 = (2*nPer+1):min(3*nPer, totalRows);
                     idx4 = [];
                 else
-                    maxT1Rows = min(10, totalRows);
+                    maxT1Rows = min(13, totalRows);  % Table1 should have up to 13 rows
                     idx1 = 1:maxT1Rows;
                     start2 = maxT1Rows + 1;
                     maxT2Rows = min(20, totalRows - start2 + 1);

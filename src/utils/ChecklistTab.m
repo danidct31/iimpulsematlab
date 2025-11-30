@@ -42,9 +42,9 @@ classdef ChecklistTab < handle
         
         function initializeTables(obj)
             %INITIALIZETABLES Initialize all four tables with empty data
-            % Table1 starts with 8 rows (5 + 3 more)
+            % Table1 starts with 13 rows
             % Table2 and Table3 start with 12 rows each
-            obj.Table1.Data = obj.Manager.createEmptyTable(8);
+            obj.Table1.Data = obj.Manager.createEmptyTable(13);
             obj.Table2.Data = obj.Manager.createEmptyTable(12);
             obj.Table3.Data = obj.Manager.createEmptyTable(12);
             obj.Table4.Data = obj.Manager.createEmptyTable(5); % Table4 should have 5 rows
