@@ -32,16 +32,43 @@ classdef ChecklistManager < handle
             
             try
                 % Normalize each table and stack them: list1, list2, list3, list4
-                T1 = table1.Data; T1.Checked = logical(T1.Checked); T1.Text = string(T1.Text);
-                T2 = table2.Data; T2.Checked = logical(T2.Checked); T2.Text = string(T2.Text);
-                T3 = table3.Data; T3.Checked = logical(T3.Checked); T3.Text = string(T3.Text);
-                T4 = table4.Data; T4.Checked = logical(T4.Checked); T4.Text = string(T4.Text);
+                T1 = table1.Data; T1.Checked = logical(T1.Checked);
+                % Handle different column names - map to 'Text' for CSV
+                if ismember('Pre-Race', T1.Properties.VariableNames)
+                    T1.Properties.VariableNames{'Pre-Race'} = 'Text';
+                end
+                T1.Text = string(T1.Text);
+                
+                T2 = table2.Data; T2.Checked = logical(T2.Checked);
+                if ismember('JK66', T2.Properties.VariableNames)
+                    T2.Properties.VariableNames{'JK66'} = 'Text';
+                end
+                T2.Text = string(T2.Text);
+                
+                T3 = table3.Data; T3.Checked = logical(T3.Checked);
+                if ismember('EO08', T3.Properties.VariableNames)
+                    T3.Properties.VariableNames{'EO08'} = 'Text';
+                end
+                T3.Text = string(T3.Text);
+                
+                T4 = table4.Data; T4.Checked = logical(T4.Checked);
+                if ismember('Text', T4.Properties.VariableNames)
+                    T4.Text = string(T4.Text);
+                elseif ismember('Check', T4.Properties.VariableNames)
+                    % Handle if column name is different
+                    textCol = setdiff(T4.Properties.VariableNames, {'Checked', 'Check'});
+                    if ~isempty(textCol)
+                        T4.Properties.VariableNames{textCol{1}} = 'Text';
+                        T4.Text = string(T4.Text);
+                    end
+                end
             
-                % Table1 can have any number of rows (don't normalize it)
-                % Table2 and Table3 can have any number of rows (don't normalize them)
-                % Table4 normalizes to ItemsPerList rows (pad/truncate)
-                n = obj.ItemsPerList;
-                T4 = obj.normalizeLen(T4, n);
+                % Normalize all tables to their expected sizes for consistent save/load
+                % Table1: 13 rows, Table2: 21 rows, Table3: 21 rows, Table4: 5 rows
+                T1 = obj.normalizeLen(T1, 13);
+                T2 = obj.normalizeLen(T2, 21);
+                T3 = obj.normalizeLen(T3, 21);
+                T4 = obj.normalizeLen(T4, 5);
             
                 % Concatenate and write only the two columns
                 T = [T1(:,{'Checked','Text'}); ...
@@ -64,8 +91,8 @@ classdef ChecklistManager < handle
             
             % Initialize empty tables
             T1 = obj.createEmptyTable(13);  % Table1 starts with 13 rows
-            T2 = obj.createEmptyTable(12); % Table2 starts with 12 rows
-            T3 = obj.createEmptyTable(12); % Table3 starts with 12 rows
+            T2 = obj.createEmptyTable(21); % Table2 starts with 21 rows
+            T3 = obj.createEmptyTable(21); % Table3 starts with 21 rows
             T4 = obj.createEmptyTable(5);  % Table4 should have 5 rows
             
             file = obj.CSVPath;
@@ -100,16 +127,41 @@ classdef ChecklistManager < handle
                     idx3 = (2*nPer+1):min(3*nPer, totalRows);
                     idx4 = [];
                 else
-                    maxT1Rows = min(13, totalRows);  % Table1 should have up to 13 rows
-                    idx1 = 1:maxT1Rows;
-                    start2 = maxT1Rows + 1;
-                    maxT2Rows = min(20, totalRows - start2 + 1);
-                    idx2 = start2:min(start2 + maxT2Rows - 1, totalRows);
-                    start3 = start2 + maxT2Rows;
-                    maxT3Rows = min(20, totalRows - start3 + 1);
-                    idx3 = start3:min(start3 + maxT3Rows - 1, totalRows);
-                    start4 = start3 + maxT3Rows;
-                    idx4 = start4:min(start4 + nPer - 1, totalRows);
+                    % New format: Load all rows that were saved
+                    % Split based on expected row counts: T1=13, T2=21, T3=21, T4=5
+                    expectedT1Rows = 13;
+                    expectedT2Rows = 21;
+                    expectedT3Rows = 21;
+                    expectedT4Rows = 5;
+                    
+                    % Table1: first 13 rows (or all if less)
+                    idx1 = 1:min(expectedT1Rows, totalRows);
+                    start2 = length(idx1) + 1;
+                    
+                    % Table2: next 21 rows (or remaining if less)
+                    if start2 <= totalRows
+                        idx2 = start2:min(start2 + expectedT2Rows - 1, totalRows);
+                        start3 = start2 + length(idx2);
+                    else
+                        idx2 = [];
+                        start3 = start2;
+                    end
+                    
+                    % Table3: next 21 rows (or remaining if less)
+                    if start3 <= totalRows
+                        idx3 = start3:min(start3 + expectedT3Rows - 1, totalRows);
+                        start4 = start3 + length(idx3);
+                    else
+                        idx3 = [];
+                        start4 = start3;
+                    end
+                    
+                    % Table4: remaining rows (up to 5, or all remaining if less)
+                    if start4 <= totalRows
+                        idx4 = start4:min(start4 + expectedT4Rows - 1, totalRows);
+                    else
+                        idx4 = [];
+                    end
                 end
         
                 if ~isempty(idx1)
@@ -123,9 +175,7 @@ classdef ChecklistManager < handle
                 end
                 if ~isempty(idx4)
                     T4 = T(idx4, {'Checked','Text'});
-                    if height(T4) < nPer
-                        T4 = [T4; obj.createEmptyTable(nPer - height(T4), height(T4)+1)];
-                    end
+                    % Don't pad Table4 - use exactly what was saved
                 end
             catch ME
                 uialert(parentFigure, "Load failed: " + ME.message, 'Load', 'Icon','error');
