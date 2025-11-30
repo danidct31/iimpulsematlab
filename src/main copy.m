@@ -1,5 +1,21 @@
 classdef main < matlab.apps.AppBase
     
+    % Complete project:
+        % Checklist
+        % Tapes
+        % Consumption
+        % Tyres
+        % FI - export, python and basemap
+        % Engine brake
+        % Rythm
+        % File Share
+        % Honda Sheets
+
+        % Project timeline:
+            % 1. Proper excel
+            % 2. Matlab
+            % 3. AI in Matlab
+
     % Properties that correspond to app components
     properties (Access = public)
         UIFigure               matlab.ui.Figure
@@ -45,10 +61,12 @@ classdef main < matlab.apps.AppBase
             app.UIFigure.Position = [100 100 1133 632];
             app.UIFigure.Name = 'IIMPULSE Racing App';
             app.UIFigure.Pointer = 'arrow';
+            app.UIFigure.Color = [0.3 0.3 0.3]; % Dark grey background
 
             % Create TabGroup
             app.TabGroup = uitabgroup(app.UIFigure);
             app.TabGroup.Position = [1 1 1133 608];
+            % Note: TabGroup doesn't support BackgroundColor property
 
             % Create MainTab
             app.MainTab = uitab(app.TabGroup);
