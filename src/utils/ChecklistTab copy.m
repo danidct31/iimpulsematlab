@@ -4,6 +4,7 @@ classdef ChecklistTab < handle
     properties (Access = public)
         Tab                matlab.ui.container.Tab
         Table1             matlab.ui.control.Table
+        Table5             matlab.ui.control.Table
         Table2             matlab.ui.control.Table
         Table3             matlab.ui.control.Table
         Table4             matlab.ui.control.Table
@@ -15,6 +16,7 @@ classdef ChecklistTab < handle
         Manager            ChecklistManager
         ParentFigure       matlab.ui.Figure
         ItemsPerList       double
+        SelectionColor     double = [1 0.5 0]  % Orange color for selection (RGB)
     end
     
     methods
@@ -38,12 +40,16 @@ classdef ChecklistTab < handle
         end
         
         function initializeTables(obj)
-            %INITIALIZETABLES Initialize all four tables with empty data
-            % Table1 starts with 13 rows
+            %INITIALIZETABLES Initialize all five tables with empty data
+            % Table1 and Table5 start with 13 rows each
             % Table2 and Table3 start with 21 rows each
             T1 = obj.Manager.createEmptyTable(13);
             T1.Properties.VariableNames{'Text'} = 'Pre-Race';
             obj.Table1.Data = T1;
+            
+            T5 = obj.Manager.createEmptyTable(13);
+            T5.Properties.VariableNames{'Text'} = 'Text';
+            obj.Table5.Data = T5;
             
             T2 = obj.Manager.createEmptyTable(21);
             T2.Properties.VariableNames{'Text'} = 'JK66';
@@ -62,8 +68,9 @@ classdef ChecklistTab < handle
         end
         
         function refreshAllRowColors(obj)
-            %REFRESHALLROWCOLORS Update row colors for all four tables
+            %REFRESHALLROWCOLORS Update row colors for all five tables
             obj.refreshRowColors(obj.Table1);
+            obj.refreshRowColors(obj.Table5);
             obj.refreshRowColors(obj.Table2);
             obj.refreshRowColors(obj.Table3);
             obj.refreshRowColors(obj.Table4);
@@ -100,9 +107,30 @@ classdef ChecklistTab < handle
             end
         end
         
+        function onCellSelection(obj, src, event)
+            %ONCELLSELECTION Callback for when cells are selected - applies orange highlight
+            %   This replaces the default blue selection color with orange
+            
+            % Remove all existing selection styles
+            styles = findall(src, 'Type', 'uistyle');
+            for i = 1:length(styles)
+                try
+                    removeStyle(src, styles(i));
+                catch
+                    % Style might already be removed, ignore
+                end
+            end
+            
+            % Apply orange selection color to selected cells
+            if ~isempty(event.Indices)
+                orangeStyle = uistyle('BackgroundColor', obj.SelectionColor);
+                addStyle(src, orangeStyle, 'cell', event.Indices);
+            end
+        end
+        
         function onSaveButtonPushed(obj, ~, ~)
             %ONSAVEBUTTONPUSHED Save all checklists to CSV
-            obj.Manager.saveChecklists(obj.Table1, obj.Table2, obj.Table3, obj.Table4, obj.ParentFigure);
+            obj.Manager.saveChecklists(obj.Table1, obj.Table5, obj.Table2, obj.Table3, obj.Table4, obj.ParentFigure);
         end
         
         function onLoadButtonPushed(obj, ~, ~)
@@ -112,7 +140,7 @@ classdef ChecklistTab < handle
         
         function loadFromCSV(obj)
             %LOADFROMCSV Load checklists from CSV file
-            [T1, T2, T3, T4] = obj.Manager.loadChecklists(obj.ParentFigure);
+            [T1, T5, T2, T3, T4] = obj.Manager.loadChecklists(obj.ParentFigure);
             
             % Rename 'Text' column to the display names
             if ismember('Text', T1.Properties.VariableNames)
@@ -134,6 +162,16 @@ classdef ChecklistTab < handle
             end
             
             obj.Table1.Data = T1;
+            
+            % Ensure Table5 has exactly 13 rows - pad or truncate as needed
+            if height(T5) < 13
+                needed = 13 - height(T5);
+                emptyRows = obj.Manager.createEmptyTable(needed, height(T5)+1);
+                T5 = [T5; emptyRows];
+            elseif height(T5) > 13
+                T5 = T5(1:13, :);
+            end
+            obj.Table5.Data = T5;
             
             if ismember('Text', T2.Properties.VariableNames)
                 T2.Properties.VariableNames{'Text'} = 'JK66';
@@ -324,16 +362,32 @@ classdef ChecklistTab < handle
             labelHeight  = 22;
             tableSpacing = 5;
             
-            % 1. Table1 (Pre-Race) - Full width, approx 2 visible rows
+            % 1. Table1 and Table5 side by side - 125px tall
             rowHeight    = 25;
-            table1Height = 2 * rowHeight + 30 - (rowHeight/5);
+            table1Height = 125;
+            spacing      = 10;
+            halfWidth    = (tableWidth - spacing) / 2;
+            
+            % Table1 (left)
             obj.Table1 = uitable(obj.Tab);
             obj.Table1.ColumnName = {'Check'; 'Pre-Race'};
             obj.Table1.ColumnWidth = {50, '1x'};
             obj.Table1.RowName = {};
             obj.Table1.ColumnEditable = true;
-            obj.Table1.Position = [leftMargin currentY - table1Height tableWidth table1Height];
+            obj.Table1.Position = [leftMargin currentY - table1Height halfWidth table1Height];
             obj.Table1.CellEditCallback = @(src, event) obj.onCellEdit(src, event);
+            obj.Table1.CellSelectionCallback = @(src, event) obj.onCellSelection(src, event);
+            
+            % Table5 (right)
+            obj.Table5 = uitable(obj.Tab);
+            obj.Table5.ColumnName = {'Check'; 'Text'};
+            obj.Table5.ColumnWidth = {50, '1x'};
+            obj.Table5.RowName = {};
+            obj.Table5.ColumnEditable = true;
+            obj.Table5.Position = [leftMargin + halfWidth + spacing currentY - table1Height halfWidth table1Height];
+            obj.Table5.CellEditCallback = @(src, event) obj.onCellEdit(src, event);
+            obj.Table5.CellSelectionCallback = @(src, event) obj.onCellSelection(src, event);
+            
             currentY = currentY - table1Height - tableSpacing;
             
             % 2. Table2 and Table3 side by side (12 visible rows)
@@ -350,6 +404,7 @@ classdef ChecklistTab < handle
             obj.Table2.ColumnEditable = true;
             obj.Table2.Position = [leftMargin currentY - table23Height table23Width table23Height];
             obj.Table2.CellEditCallback = @(src, event) obj.onCellEdit(src, event);
+            obj.Table2.CellSelectionCallback = @(src, event) obj.onCellSelection(src, event);
             
             % Table3 (right)
             obj.Table3 = uitable(obj.Tab);
@@ -359,6 +414,7 @@ classdef ChecklistTab < handle
             obj.Table3.ColumnEditable = true;
             obj.Table3.Position = [leftMargin + halfWidth + spacing currentY - table23Height table23Width table23Height];
             obj.Table3.CellEditCallback = @(src, event) obj.onCellEdit(src, event);
+            obj.Table3.CellSelectionCallback = @(src, event) obj.onCellSelection(src, event);
             currentY = currentY - table23Height - tableSpacing;
             
             % 5. Table4 - Full width, 3-row visual height (but 5 data rows)
@@ -370,6 +426,7 @@ classdef ChecklistTab < handle
             obj.Table4.ColumnEditable = true;
             obj.Table4.Position = [leftMargin currentY - table4Height tableWidth table4Height];
             obj.Table4.CellEditCallback = @(src, event) obj.onCellEdit(src, event);
+            obj.Table4.CellSelectionCallback = @(src, event) obj.onCellSelection(src, event);
         end
     end
 end

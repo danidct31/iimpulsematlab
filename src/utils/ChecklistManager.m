@@ -25,38 +25,64 @@ classdef ChecklistManager < handle
             obj.ItemsPerList = itemsPerList;
         end
         
-        function saveChecklists(obj, table1, table2, table3, table4, parentFigure)
-            %SAVECHECKLISTS Save all four checklist tables to a single CSV
-            %   table1, table2, table3, table4: MATLAB table objects with Checked and Text columns
+        function saveChecklists(obj, table1, table5, table2, table3, table4, parentFigure)
+            %SAVECHECKLISTS Save all five checklist tables to a single CSV
+            %   table1, table5, table2, table3, table4: MATLAB table objects with Checked and Text columns
             %   parentFigure: UIFigure handle for error dialogs
             
             try
-                % Normalize each table and stack them: list1, list2, list3, list4
+                % Normalize each table and stack them: list1, list5, list2, list3, list4
                 T1 = table1.Data; T1.Checked = logical(T1.Checked);
+                % Ensure Orange column exists
+                if ~ismember('Orange', T1.Properties.VariableNames)
+                    T1.Orange = false(height(T1), 1);
+                end
+                T1.Orange = logical(T1.Orange);
                 % Handle different column names - map to 'Text' for CSV
                 if ismember('Pre-Race', T1.Properties.VariableNames)
                     T1.Properties.VariableNames{'Pre-Race'} = 'Text';
                 end
                 T1.Text = string(T1.Text);
                 
+                T5 = table5.Data; T5.Checked = logical(T5.Checked);
+                if ~ismember('Orange', T5.Properties.VariableNames)
+                    T5.Orange = false(height(T5), 1);
+                end
+                T5.Orange = logical(T5.Orange);
+                if ismember('Text', T5.Properties.VariableNames)
+                    T5.Text = string(T5.Text);
+                end
+                
                 T2 = table2.Data; T2.Checked = logical(T2.Checked);
+                if ~ismember('Orange', T2.Properties.VariableNames)
+                    T2.Orange = false(height(T2), 1);
+                end
+                T2.Orange = logical(T2.Orange);
                 if ismember('JK66', T2.Properties.VariableNames)
                     T2.Properties.VariableNames{'JK66'} = 'Text';
                 end
                 T2.Text = string(T2.Text);
                 
                 T3 = table3.Data; T3.Checked = logical(T3.Checked);
+                if ~ismember('Orange', T3.Properties.VariableNames)
+                    T3.Orange = false(height(T3), 1);
+                end
+                T3.Orange = logical(T3.Orange);
                 if ismember('EO08', T3.Properties.VariableNames)
                     T3.Properties.VariableNames{'EO08'} = 'Text';
                 end
                 T3.Text = string(T3.Text);
                 
                 T4 = table4.Data; T4.Checked = logical(T4.Checked);
+                if ~ismember('Orange', T4.Properties.VariableNames)
+                    T4.Orange = false(height(T4), 1);
+                end
+                T4.Orange = logical(T4.Orange);
                 if ismember('Text', T4.Properties.VariableNames)
                     T4.Text = string(T4.Text);
                 elseif ismember('Check', T4.Properties.VariableNames)
                     % Handle if column name is different
-                    textCol = setdiff(T4.Properties.VariableNames, {'Checked', 'Check'});
+                    textCol = setdiff(T4.Properties.VariableNames, {'Checked', 'Check', 'Orange'});
                     if ~isempty(textCol)
                         T4.Properties.VariableNames{textCol{1}} = 'Text';
                         T4.Text = string(T4.Text);
@@ -64,17 +90,19 @@ classdef ChecklistManager < handle
                 end
             
                 % Normalize all tables to their expected sizes for consistent save/load
-                % Table1: 13 rows, Table2: 21 rows, Table3: 21 rows, Table4: 5 rows
+                % Table1: 13 rows, Table5: 13 rows, Table2: 21 rows, Table3: 21 rows, Table4: 5 rows
                 T1 = obj.normalizeLen(T1, 13);
+                T5 = obj.normalizeLen(T5, 13);
                 T2 = obj.normalizeLen(T2, 21);
                 T3 = obj.normalizeLen(T3, 21);
                 T4 = obj.normalizeLen(T4, 5);
             
-                % Concatenate and write only the two columns
-                T = [T1(:,{'Checked','Text'}); ...
-                     T2(:,{'Checked','Text'}); ...
-                     T3(:,{'Checked','Text'}); ...
-                     T4(:,{'Checked','Text'})];
+                % Concatenate and write Checked, Text, and Orange columns
+                T = [T1(:,{'Checked','Text','Orange'}); ...
+                     T5(:,{'Checked','Text','Orange'}); ...
+                     T2(:,{'Checked','Text','Orange'}); ...
+                     T3(:,{'Checked','Text','Orange'}); ...
+                     T4(:,{'Checked','Text','Orange'})];
                 writetable(T, obj.CSVPath);
                 
                 % Success message removed (silent save)
@@ -84,13 +112,14 @@ classdef ChecklistManager < handle
             end
         end
         
-        function [T1, T2, T3, T4] = loadChecklists(obj, parentFigure)
-            %LOADCHECKLISTS Load checklist data from CSV and return four tables
+        function [T1, T5, T2, T3, T4] = loadChecklists(obj, parentFigure)
+            %LOADCHECKLISTS Load checklist data from CSV and return five tables
             %   parentFigure: UIFigure handle for error dialogs
-            %   Returns: T1, T2, T3, T4 - four table objects for the four checklists
+            %   Returns: T1, T5, T2, T3, T4 - five table objects for the five checklists
             
             % Initialize empty tables
             T1 = obj.createEmptyTable(13);  % Table1 starts with 13 rows
+            T5 = obj.createEmptyTable(13);  % Table5 starts with 13 rows
             T2 = obj.createEmptyTable(21); % Table2 starts with 21 rows
             T3 = obj.createEmptyTable(21); % Table3 starts with 21 rows
             T4 = obj.createEmptyTable(5);  % Table4 should have 5 rows
@@ -102,7 +131,7 @@ classdef ChecklistManager < handle
         
             try
                 T = readtable(file, 'TextType','string');
-                % Accept headers "Checked,Text" or "Check,Text"
+                % Accept headers "Checked,Text" or "Check,Text", and optionally "Orange"
                 vars = string(T.Properties.VariableNames);
                 if ismember("Check", vars) && ~ismember("Checked", vars)
                     T.Properties.VariableNames{vars=="Check"} = "Checked";
@@ -116,6 +145,12 @@ classdef ChecklistManager < handle
                 % Normalize types
                 T.Checked = logical(T.Checked);
                 T.Text    = string(T.Text);
+                % Add Orange column if missing (for backward compatibility)
+                if ~ismember("Orange", vars)
+                    T.Orange = false(height(T), 1);
+                else
+                    T.Orange = logical(T.Orange);
+                end
         
                 nPer = obj.ItemsPerList;
                 totalRows = height(T);
@@ -128,15 +163,25 @@ classdef ChecklistManager < handle
                     idx4 = [];
                 else
                     % New format: Load all rows that were saved
-                    % Split based on expected row counts: T1=13, T2=21, T3=21, T4=5
+                    % Split based on expected row counts: T1=13, T5=13, T2=21, T3=21, T4=5
                     expectedT1Rows = 13;
+                    expectedT5Rows = 13;
                     expectedT2Rows = 21;
                     expectedT3Rows = 21;
                     expectedT4Rows = 5;
                     
                     % Table1: first 13 rows (or all if less)
                     idx1 = 1:min(expectedT1Rows, totalRows);
-                    start2 = length(idx1) + 1;
+                    start5 = length(idx1) + 1;
+                    
+                    % Table5: next 13 rows (or remaining if less)
+                    if start5 <= totalRows
+                        idx5 = start5:min(start5 + expectedT5Rows - 1, totalRows);
+                        start2 = start5 + length(idx5);
+                    else
+                        idx5 = [];
+                        start2 = start5;
+                    end
                     
                     % Table2: next 21 rows (or remaining if less)
                     if start2 <= totalRows
@@ -165,16 +210,19 @@ classdef ChecklistManager < handle
                 end
         
                 if ~isempty(idx1)
-                    T1 = T(idx1, {'Checked','Text'});
+                    T1 = T(idx1, {'Checked','Text','Orange'});
+                end
+                if ~isempty(idx5)
+                    T5 = T(idx5, {'Checked','Text','Orange'});
                 end
                 if ~isempty(idx2)
-                    T2 = T(idx2, {'Checked','Text'});
+                    T2 = T(idx2, {'Checked','Text','Orange'});
                 end
                 if ~isempty(idx3)
-                    T3 = T(idx3, {'Checked','Text'});
+                    T3 = T(idx3, {'Checked','Text','Orange'});
                 end
                 if ~isempty(idx4)
-                    T4 = T(idx4, {'Checked','Text'});
+                    T4 = T(idx4, {'Checked','Text','Orange'});
                     % Don't pad Table4 - use exactly what was saved
                 end
             catch ME
@@ -191,7 +239,8 @@ classdef ChecklistManager < handle
             end
             emptyTable = table(false(nItems,1), ...
                                "Item " + string(startIndex:(startIndex+nItems-1))', ...
-                               'VariableNames', {'Checked','Text'});
+                               false(nItems,1), ...
+                               'VariableNames', {'Checked','Text','Orange'});
         end
     end
     
