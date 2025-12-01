@@ -44,21 +44,27 @@ classdef ChecklistTab < handle
             % Table2 and Table3 start with 21 rows each
             T1 = obj.Manager.createEmptyTable(13);
             T1.Properties.VariableNames{'Text'} = 'Pre-Race';
+            T1 = obj.reorderTableColumns(T1);
             obj.Table1.Data = T1;
             
             T5 = obj.Manager.createEmptyTable(13);
             T5.Properties.VariableNames{'Text'} = 'Text';
+            T5 = obj.reorderTableColumns(T5);
             obj.Table5.Data = T5;
             
             T2 = obj.Manager.createEmptyTable(21);
             T2.Properties.VariableNames{'Text'} = 'JK66';
+            T2 = obj.reorderTableColumns(T2);
             obj.Table2.Data = T2;
             
             T3 = obj.Manager.createEmptyTable(21);
             T3.Properties.VariableNames{'Text'} = 'EO08';
+            T3 = obj.reorderTableColumns(T3);
             obj.Table3.Data = T3;
             
-            obj.Table4.Data = obj.Manager.createEmptyTable(5); % Table4 should have 5 rows
+            T4 = obj.Manager.createEmptyTable(5);
+            T4 = obj.reorderTableColumns(T4);
+            obj.Table4.Data = T4;
             
             obj.refreshAllRowColors();
             
@@ -77,6 +83,8 @@ classdef ChecklistTab < handle
         
         function refreshRowColors(obj, tbl)
             %REFRESHROWCOLORS Update row colors for a single table
+            %   Logic: Check column checked -> blue, Orange column checked -> orange,
+            %   both unchecked -> white
             D = tbl.Data;
             nRows = size(D,1);
             C = ones(nRows,3);  % Default white
@@ -87,16 +95,16 @@ classdef ChecklistTab < handle
                 tbl.Data = D;
             end
             
-            % Apply colors: blue (checked) overrides orange, unchecked shows original color
+            % Apply colors based on checkbox states
             for r = 1:nRows
                 if D.Checked(r)
-                    % Checked: blue background (overrides orange)
+                    % Check column checked: blue background
                     C(r,:) = [0.7 0.9 1];  % Light blue
                 elseif D.Orange(r)
-                    % Unchecked but orange: orange background
+                    % Orange column checked: orange background
                     C(r,:) = [1 0.5 0];  % Orange
                 else
-                    % Unchecked and not orange: white background
+                    % Both unchecked: white background
                     C(r,:) = [1 1 1];  % White
                 end
             end
@@ -105,32 +113,57 @@ classdef ChecklistTab < handle
         
         function onCellEdit(obj, ~, event)
             %ONCELLEDIT Callback for when a cell is edited
+            %   Handles both Check column (column 1) and Orange column (column 2)
+            %   Ensures only one checkbox per row can be checked at a time
             tbl = event.Source;
-            if ~isempty(event.Indices) && event.Indices(2) == 1
-                % Checkbox column was edited - update row colors
-                obj.refreshRowColors(tbl);
-            end
-        end
-        
-        function onCellSelection(obj, src, event)
-            %ONCELLSELECTION Callback for when cells are selected
-            %   If checkbox column (column 1) is clicked, toggle orange state of text cell
-            if ~isempty(event.Indices) && event.Indices(2) == 1
-                % Checkbox column was selected - toggle orange state
+            if ~isempty(event.Indices) && (event.Indices(2) == 1 || event.Indices(2) == 2)
                 row = event.Indices(1);
-                data = src.Data;
+                col = event.Indices(2);
+                data = tbl.Data;
                 
                 % Ensure Orange column exists
                 if ~ismember('Orange', data.Properties.VariableNames)
                     data.Orange = false(height(data), 1);
                 end
                 
-                % Toggle orange state
-                data.Orange(row) = ~data.Orange(row);
-                src.Data = data;
+                % Get the new value that was just set
+                newValue = data{row, col};
                 
-                % Update row colors to reflect orange state
-                obj.refreshRowColors(src);
+                % If a checkbox was checked, uncheck the other one
+                if newValue && col == 1
+                    % Check column was checked - uncheck Orange column
+                    data.Orange(row) = false;
+                elseif newValue && col == 2
+                    % Orange column was checked - uncheck Check column
+                    data.Checked(row) = false;
+                end
+                
+                % Update the table data
+                tbl.Data = data;
+                
+                % Update row colors
+                obj.refreshRowColors(tbl);
+            end
+        end
+        
+        function onCellSelection(obj, src, event)
+            %ONCELLSELECTION Callback for when cells are selected
+            %   Prevents cell selection for checkbox columns (columns 1 and 2)
+            %   This makes it appear as if the cells can't be clicked, while
+            %   checkboxes remain functional
+            if ~isempty(event.Indices)
+                col = event.Indices(1, 2); % Get column index
+                % If checkbox column (1 or 2) is selected, clear the selection
+                if col == 1 || col == 2
+                    % Force a redraw and then clear selection
+                    drawnow;
+                    try
+                        src.Selection = [];
+                    catch
+                        % If Selection property is read-only, try alternative approach
+                        % This might not work in all MATLAB versions
+                    end
+                end
             end
         end
         
@@ -167,6 +200,8 @@ classdef ChecklistTab < handle
                 T1 = T1(1:13, :);
             end
             
+            % Reorder columns to match display: Checked, Orange, Text
+            T1 = obj.reorderTableColumns(T1);
             obj.Table1.Data = T1;
             
             % Ensure Table5 has exactly 13 rows - pad or truncate as needed
@@ -177,6 +212,8 @@ classdef ChecklistTab < handle
             elseif height(T5) > 13
                 T5 = T5(1:13, :);
             end
+            % Reorder columns to match display: Checked, Orange, Text
+            T5 = obj.reorderTableColumns(T5);
             obj.Table5.Data = T5;
             
             if ismember('Text', T2.Properties.VariableNames)
@@ -194,6 +231,8 @@ classdef ChecklistTab < handle
             elseif height(T2) > 21
                 T2 = T2(1:21, :);
             end
+            % Reorder columns to match display: Checked, Orange, Text (or JK66)
+            T2 = obj.reorderTableColumns(T2);
             obj.Table2.Data = T2;
             
             if ismember('Text', T3.Properties.VariableNames)
@@ -211,6 +250,8 @@ classdef ChecklistTab < handle
             elseif height(T3) > 21
                 T3 = T3(1:21, :);
             end
+            % Reorder columns to match display: Checked, Orange, Text (or EO08)
+            T3 = obj.reorderTableColumns(T3);
             obj.Table3.Data = T3;
             
             % Ensure Table4 has exactly 5 rows - pad or truncate as needed
@@ -221,6 +262,8 @@ classdef ChecklistTab < handle
             elseif height(T4) > 5
                 T4 = T4(1:5, :);
             end
+            % Reorder columns to match display: Checked, Orange, Text
+            T4 = obj.reorderTableColumns(T4);
             obj.Table4.Data = T4;
             
             obj.refreshAllRowColors();
@@ -285,6 +328,24 @@ classdef ChecklistTab < handle
                 % Table4 should be here
                 obj.Table4.Position = [leftMargin currentY - table4Height tableWidth table4Height];
             end
+        end
+        
+        function T = reorderTableColumns(obj, T)
+            %REORDERTABLECOLUMNS Reorder table columns to match display: Checked, Orange, Text
+            %   Reorders from [Checked, Text, Orange] to [Checked, Orange, Text]
+            %   Handles cases where Text column may have different names (Pre-Race, JK66, EO08)
+            
+            % Find the text column name (could be Text, Pre-Race, JK66, EO08)
+            allCols = T.Properties.VariableNames;
+            textColName = setdiff(allCols, {'Checked', 'Orange'});
+            if isempty(textColName)
+                % No text column found, return as is
+                return;
+            end
+            textColName = textColName{1};
+            
+            % Reorder to: Checked, Orange, Text
+            T = T(:, {'Checked', 'Orange', textColName});
         end
         
         function ensureButtonsVisible(obj)
@@ -376,8 +437,8 @@ classdef ChecklistTab < handle
             
             % Table1 (left)
             obj.Table1 = uitable(obj.Tab);
-            obj.Table1.ColumnName = {'Check'; 'Pre-Race'; 'Orange'};
-            obj.Table1.ColumnWidth = {50, '1x', 50};  % First and third checkbox columns same width, text expands
+            obj.Table1.ColumnName = {'Check'; 'Orange'; 'Pre-Race'};
+            obj.Table1.ColumnWidth = {50, 50, '1x'};  % Check and Orange columns same width, text expands
             obj.Table1.RowName = {};
             obj.Table1.ColumnEditable = true;
             obj.Table1.Position = [leftMargin currentY - table1Height halfWidth table1Height];
@@ -386,8 +447,8 @@ classdef ChecklistTab < handle
             
             % Table5 (right)
             obj.Table5 = uitable(obj.Tab);
-            obj.Table5.ColumnName = {'Check'; 'Text'; 'Orange'};
-            obj.Table5.ColumnWidth = {50, '1x', 50};  % First and third checkbox columns same width, text expands
+            obj.Table5.ColumnName = {'Check'; 'Orange'; 'Text'};
+            obj.Table5.ColumnWidth = {50, 50, '1x'};  % Check and Orange columns same width, text expands
             obj.Table5.RowName = {};
             obj.Table5.ColumnEditable = true;
             obj.Table5.Position = [leftMargin + halfWidth + spacing currentY - table1Height halfWidth table1Height];
@@ -404,8 +465,8 @@ classdef ChecklistTab < handle
             
             % Table2 (left)
             obj.Table2 = uitable(obj.Tab);
-            obj.Table2.ColumnName = {'Check'; 'JK66'; 'Orange'};
-            obj.Table2.ColumnWidth = {50, '1x', 50};  % First and third checkbox columns same width, text expands
+            obj.Table2.ColumnName = {'Check'; 'Orange'; 'JK66'};
+            obj.Table2.ColumnWidth = {50, 50, '1x'};  % Check and Orange columns same width, text expands
             obj.Table2.RowName = {};
             obj.Table2.ColumnEditable = true;
             obj.Table2.Position = [leftMargin currentY - table23Height table23Width table23Height];
@@ -414,8 +475,8 @@ classdef ChecklistTab < handle
             
             % Table3 (right)
             obj.Table3 = uitable(obj.Tab);
-            obj.Table3.ColumnName = {'Check'; 'EO08'; 'Orange'};
-            obj.Table3.ColumnWidth = {50, '1x', 50};  % First and third checkbox columns same width, text expands
+            obj.Table3.ColumnName = {'Check'; 'Orange'; 'EO08'};
+            obj.Table3.ColumnWidth = {50, 50, '1x'};  % Check and Orange columns same width, text expands
             obj.Table3.RowName = {};
             obj.Table3.ColumnEditable = true;
             obj.Table3.Position = [leftMargin + halfWidth + spacing currentY - table23Height table23Width table23Height];
@@ -426,8 +487,8 @@ classdef ChecklistTab < handle
             % 5. Table4 - Full width, 3-row visual height (but 5 data rows)
             table4Height = 3 * rowHeight + 30; % 3 rows visible + header (but has 5 data rows)
             obj.Table4 = uitable(obj.Tab);
-            obj.Table4.ColumnName = {'Check'; 'Text'; 'Orange'};
-            obj.Table4.ColumnWidth = {50, '1x', 50};  % First and third checkbox columns same width, text expands
+            obj.Table4.ColumnName = {'Check'; 'Orange'; 'Text'};
+            obj.Table4.ColumnWidth = {50, 50, '1x'};  % Check and Orange columns same width, text expands
             obj.Table4.RowName = {};
             obj.Table4.ColumnEditable = true;
             obj.Table4.Position = [leftMargin currentY - table4Height tableWidth table4Height];
