@@ -24,7 +24,8 @@ classdef main < matlab.apps.AppBase
     end
     
     properties (Access = private)
-        ChecklistTabComponent  % ChecklistTab instance
+        ChecklistTabComponent      % ChecklistTab instance
+        EngineTemperatureTabComponent  % EngineTemperatureTab instance
     end
     
     methods (Access = private)
@@ -47,6 +48,10 @@ classdef main < matlab.apps.AppBase
             
             csvPath = fullfile(dataDir, 'checklistData.csv');
             app.ChecklistTabComponent = ChecklistTab(app.TabGroup, app.UIFigure, csvPath, 40);
+            
+            % Initialize Engine Temperature tab
+            engineTempPath = fullfile(dataDir, 'enginetemperature.csv');
+            app.EngineTemperatureTabComponent = EngineTemperatureTab(app.TabGroup, app.UIFigure, engineTempPath);
         end
     end
 
