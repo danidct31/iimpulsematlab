@@ -21,6 +21,8 @@ classdef EngineTemperatureTab < handle
         SlipstreamFilterDropDown
         SessionFilterDropDown
         ReloadButton
+        LoadButton
+        SaveButton
         
         % Summary panel
         SummaryPanel
@@ -38,6 +40,7 @@ classdef EngineTemperatureTab < handle
         % Data
         CsvPath
         Data table
+        FilteredRowIndices % Track which rows in obj.Data correspond to filtered display
     end
     
     methods
@@ -71,12 +74,12 @@ classdef EngineTemperatureTab < handle
             obj.FilterPanel.Layout.Row = 1;
             obj.FilterPanel.Layout.Column = 1;
             
-            filterGrid = uigridlayout(obj.FilterPanel, [1 7]);
+            filterGrid = uigridlayout(obj.FilterPanel, [1 9]);
             % Dropdown columns are 1/3 smaller (2/3 of original size)
             % Columns: Sponge label, Sponge dropdown, Slipstream label, Slipstream dropdown, 
-            %          Session label, Session dropdown, Reload button
+            %          Session label, Session dropdown, Reload button, Load button, Save button
             % Making dropdown columns smaller - using 0.5x to ensure they're actually smaller
-            filterGrid.ColumnWidth = {'fit', '0.5x', 'fit', '0.5x', 'fit', '0.5x', 'fit'};
+            filterGrid.ColumnWidth = {'fit', '0.5x', 'fit', '0.5x', 'fit', '0.5x', 'fit', 'fit', 'fit'};
             
             % Sponge filter
             uilabel(filterGrid, 'Text', 'Sponge', 'HorizontalAlignment', 'center');
@@ -99,10 +102,20 @@ classdef EngineTemperatureTab < handle
                 'Value', 'All', ...
                 'ValueChangedFcn', @(dd, event) obj.onFilterChanged());
             
-            % Reload button (in same row, last cell)
+            % Reload button
             obj.ReloadButton = uibutton(filterGrid, ...
                 'Text', 'Reload CSV', ...
                 'ButtonPushedFcn', @(btn, event) obj.onReloadButtonPushed());
+            
+            % Load button
+            obj.LoadButton = uibutton(filterGrid, ...
+                'Text', 'Load', ...
+                'ButtonPushedFcn', @(btn, event) obj.onLoadButtonPushed());
+            
+            % Save button
+            obj.SaveButton = uibutton(filterGrid, ...
+                'Text', 'Save', ...
+                'ButtonPushedFcn', @(btn, event) obj.onSaveButtonPushed());
             
             %% Summary panel (rows 1-2, col 2) - 1/4 taller than filter panel
             obj.SummaryPanel = uipanel(obj.MainGrid);
@@ -139,14 +152,19 @@ classdef EngineTemperatureTab < handle
             rawGrid.ColumnWidth = {'1x'};
             
             obj.RawTable = uitable(rawGrid, ...
-                'ColumnEditable', false, ...
-                'RowName', []);
+                'ColumnEditable', true, ...
+                'RowName', [], ...
+                'CellEditCallback', @(src, event) obj.onTableCellEdit(src, event));
             obj.RawTable.Layout.Row = 1;
             obj.RawTable.Layout.Column = 1;
             
             % NOTE: width is up to column J because the data itself only has
             % 10 columns; the table will automatically size to show them.
             obj.RawTable.ColumnWidth = 'auto';
+            
+            % Apply center alignment style to all cells
+            centerStyle = uistyle('HorizontalAlignment', 'center');
+            addStyle(obj.RawTable, centerStyle);
             
             %% Water temp plot (row 3, col 2) - moved down since summary spans rows 1-2
             obj.AxesWater = uiaxes(obj.MainGrid);
@@ -209,6 +227,9 @@ classdef EngineTemperatureTab < handle
                 return;
             end
             
+            % Store original indices before filtering
+            originalIndices = (1:height(T))';
+            
             % Sponge filter
             spongeValue = obj.SpongeFilterDropDown.Value;
             if ~strcmp(spongeValue, 'All') && ismember('Sponge', T.Properties.VariableNames)
@@ -216,9 +237,11 @@ classdef EngineTemperatureTab < handle
                     % rows with empty or missing sponge (if you ever add them)
                     mask = ismissing(T.Sponge) | strcmpi(strtrim(string(T.Sponge)), '');
                     T = T(mask, :);
+                    originalIndices = originalIndices(mask);
                 else
                     mask = strcmp(string(T.Sponge), spongeValue);
                     T = T(mask, :);
+                    originalIndices = originalIndices(mask);
                 end
             end
             
@@ -227,9 +250,13 @@ classdef EngineTemperatureTab < handle
             if ismember('Slipstream', T.Properties.VariableNames)
                 switch slipValue
                     case 'No slipstream (0)'
-                        T = T(T.Slipstream == 0, :);
+                        mask = T.Slipstream == 0;
+                        T = T(mask, :);
+                        originalIndices = originalIndices(mask);
                     case 'Slipstream (1)'
-                        T = T(T.Slipstream == 1, :);
+                        mask = T.Slipstream == 1;
+                        T = T(mask, :);
+                        originalIndices = originalIndices(mask);
                     otherwise
                         % 'All' -> no extra filter
                 end
@@ -238,12 +265,18 @@ classdef EngineTemperatureTab < handle
             % Session filter
             sessValue = obj.SessionFilterDropDown.Value;
             if ~strcmp(sessValue, 'All') && ismember('Session', T.Properties.VariableNames)
-                T = T(strcmp(string(T.Session), sessValue), :);
+                mask = strcmp(string(T.Session), sessValue);
+                T = T(mask, :);
+                originalIndices = originalIndices(mask);
             end
+            
+            % Store the mapping from filtered rows to original rows
+            obj.FilteredRowIndices = originalIndices;
         end
         
         function refreshAll(obj)
             T = obj.getFilteredData();
+            % Note: getFilteredData() now sets obj.FilteredRowIndices
             obj.updateRawTable(T);
             obj.updateSpongeSummary(T);
             obj.updateSlipstreamSummary(T);
@@ -254,9 +287,104 @@ classdef EngineTemperatureTab < handle
             if isempty(T)
                 obj.RawTable.Data = {};
                 obj.RawTable.ColumnName = {};
+                obj.RawTable.ColumnEditable = [];
+                obj.RawTable.ColumnFormat = {};
             else
-                obj.RawTable.Data = T;
+                % Format numeric columns to one decimal place
+                T_formatted = obj.formatTableForDisplay(T);
+                
+                % Determine which columns are editable (all except row identifiers if any)
+                numCols = width(T);
+                editable = true(1, numCols);
+                
+                % Set column formats for proper display
+                colFormats = cell(1, numCols);
+                varNames = T.Properties.VariableNames;
+                for i = 1:numCols
+                    colData = T.(varNames{i});
+                    formattedColData = T_formatted.(varNames{i});
+                    if isnumeric(colData) && ~islogical(colData)
+                        % Numeric columns are formatted as cell arrays of strings
+                        colFormats{i} = 'char';
+                    elseif islogical(colData)
+                        colFormats{i} = 'logical';
+                    else
+                        colFormats{i} = 'char';
+                    end
+                end
+                
+                obj.RawTable.Data = T_formatted;
                 obj.RawTable.ColumnName = T.Properties.VariableNames;
+                obj.RawTable.ColumnEditable = editable;
+                obj.RawTable.ColumnFormat = colFormats;
+            end
+        end
+        
+        function T_formatted = formatTableForDisplay(obj, T)
+            %FORMATTABLEFORDISPLAY Format table for display with one decimal place for numbers
+            %   Returns a table with numeric columns formatted as strings with one decimal
+            T_formatted = T;
+            varNames = T.Properties.VariableNames;
+            
+            for i = 1:width(T)
+                colData = T.(varNames{i});
+                if isnumeric(colData) && ~islogical(colData)
+                    % Format numeric columns to one decimal place
+                    % Convert to string with one decimal, handling NaN
+                    formatted = cell(height(T), 1);
+                    for j = 1:height(T)
+                        if isnan(colData(j))
+                            formatted{j} = '';
+                        else
+                            formatted{j} = sprintf('%.1f', colData(j));
+                        end
+                    end
+                    T_formatted.(varNames{i}) = formatted;
+                end
+            end
+        end
+        
+        function T_numeric = unformatTableFromDisplay(obj, T_formatted, T_original)
+            %UNFORMATTABLEFROMDISPLAY Convert formatted display table back to numeric
+            %   T_formatted: table with formatted strings
+            %   T_original: original table with numeric types
+            T_numeric = T_original;
+            varNames = T_original.Properties.VariableNames;
+            
+            for i = 1:width(T_original)
+                if isnumeric(T_original.(varNames{i})) && ~islogical(T_original.(varNames{i}))
+                    % Convert formatted strings back to numbers
+                    formattedData = T_formatted.(varNames{i});
+                    numericData = nan(height(T_original), 1);
+                    for j = 1:height(T_original)
+                        if iscell(formattedData)
+                            val = formattedData{j};
+                        else
+                            val = formattedData(j);
+                        end
+                        if ischar(val) || isstring(val)
+                            valStr = string(val);
+                            if valStr == "" || ismissing(valStr)
+                                numericData(j) = nan;
+                            else
+                                numericData(j) = str2double(valStr);
+                            end
+                        else
+                            numericData(j) = val;
+                        end
+                    end
+                    T_numeric.(varNames{i}) = numericData;
+                elseif iscell(T_formatted.(varNames{i}))
+                    % For cell arrays, extract the actual values
+                    cellData = T_formatted.(varNames{i});
+                    if iscell(cellData)
+                        T_numeric.(varNames{i}) = cellData;
+                    else
+                        T_numeric.(varNames{i}) = T_formatted.(varNames{i});
+                    end
+                else
+                    T_numeric.(varNames{i}) = T_formatted.(varNames{i});
+                end
             end
         end
         
@@ -472,6 +600,153 @@ classdef EngineTemperatureTab < handle
             obj.loadData();
             obj.configureSessionFilter();
             obj.refreshAll();
+        end
+        
+        function onLoadButtonPushed(obj)
+            %ONLOADBUTTONPUSHED Load data from enginetemperature.csv automatically
+            try
+                if isfile(obj.CsvPath)
+                    T = readtable(obj.CsvPath);
+                    obj.Data = T;
+                    obj.configureSessionFilter();
+                    obj.refreshAll();
+                else
+                    uialert(obj.ParentFigure, ...
+                        sprintf('CSV file not found at: %s', obj.CsvPath), ...
+                        'Load Error', 'Icon', 'warning');
+                end
+            catch ME
+                uialert(obj.ParentFigure, ...
+                    sprintf('Error loading CSV file:\n%s', ME.message), ...
+                    'Load Error', 'Icon', 'error');
+            end
+        end
+        
+        function onSaveButtonPushed(obj)
+            %ONSAVEBUTTONPUSHED Save current table data to enginetemperature.csv automatically
+            try
+                % Update Data from table to ensure we have the latest edits
+                obj.updateDataFromTable();
+                if ~isempty(obj.Data)
+                    writetable(obj.Data, obj.CsvPath);
+                else
+                    uialert(obj.ParentFigure, ...
+                        'No data to save', 'Save Error', 'Icon', 'warning');
+                end
+            catch ME
+                uialert(obj.ParentFigure, ...
+                    sprintf('Error saving CSV file:\n%s', ME.message), ...
+                    'Save Error', 'Icon', 'error');
+            end
+        end
+        
+        function onTableCellEdit(obj, src, event)
+            %ONTABLECELLEDIT Handle cell edit in the raw table
+            %   Update the underlying Data property when user edits a cell
+            indices = event.Indices;
+            newData = event.NewData;
+            
+            % Get current table data (formatted display)
+            T_display = src.Data;
+            if ~istable(T_display)
+                return;
+            end
+            
+            row = indices(1);  % Row in filtered/displayed table
+            col = indices(2);
+            varNames = T_display.Properties.VariableNames;
+            colName = varNames{col};
+            
+            % Get the original data structure to determine type
+            if isempty(obj.Data) || ~ismember(colName, obj.Data.Properties.VariableNames)
+                return;
+            end
+            
+            % Map filtered row index to original data row index
+            if ~isempty(obj.FilteredRowIndices) && row <= length(obj.FilteredRowIndices)
+                originalRow = obj.FilteredRowIndices(row);
+            else
+                % Fallback: assume row matches (no filtering or mapping lost)
+                originalRow = row;
+            end
+            
+            originalColData = obj.Data.(colName);
+            
+            % Convert new value based on original column type
+            if isnumeric(originalColData) && ~islogical(originalColData)
+                % Numeric column - convert string input to number
+                if ischar(newData) || isstring(newData) || iscell(newData)
+                    if iscell(newData)
+                        valStr = string(newData{1});
+                    else
+                        valStr = string(newData);
+                    end
+                    if valStr == "" || ismissing(valStr)
+                        numVal = nan;
+                    else
+                        numVal = str2double(valStr);
+                        if isnan(numVal)
+                            % Invalid number - revert
+                            uialert(obj.ParentFigure, ...
+                                'Invalid number. Please enter a numeric value.', ...
+                                'Invalid Input', 'Icon', 'warning');
+                            % Revert the cell
+                            T_display.(colName)(row) = event.PreviousData;
+                            src.Data = T_display;
+                            return;
+                        end
+                    end
+                else
+                    numVal = newData;
+                end
+                % Update original data at the correct row
+                if originalRow <= height(obj.Data)
+                    obj.Data.(colName)(originalRow) = numVal;
+                end
+                % Format for display
+                if isnan(numVal)
+                    T_display.(colName)(row) = {''};
+                else
+                    T_display.(colName)(row) = {sprintf('%.1f', numVal)};
+                end
+            elseif islogical(originalColData)
+                % Logical column
+                if originalRow <= height(obj.Data)
+                    obj.Data.(colName)(originalRow) = logical(newData);
+                end
+                T_display.(colName)(row) = logical(newData);
+            else
+                % String/cell column
+                if originalRow <= height(obj.Data)
+                    obj.Data.(colName)(originalRow) = newData;
+                end
+                T_display.(colName)(row) = newData;
+            end
+            
+            % Update display
+            src.Data = T_display;
+            
+            % Refresh other displays (but don't refresh the table itself to avoid flicker)
+            T_filtered = obj.getFilteredData();
+            obj.updateSpongeSummary(T_filtered);
+            obj.updateSlipstreamSummary(T_filtered);
+            obj.updatePlots(T_filtered);
+        end
+        
+        function updateDataFromTable(obj)
+            %UPDATEDATAFROMTABLE Update Data property from current table display
+            %   This is called before saving to ensure Data is up to date
+            %   The Data property should already be updated via cell edit callbacks
+            %   This is mainly for safety/consistency
+            T_display = obj.RawTable.Data;
+            if ~istable(T_display) || isempty(T_display)
+                return;
+            end
+            
+            % Convert formatted display back to numeric for all columns
+            if ~isempty(obj.Data)
+                obj.Data = obj.unformatTableFromDisplay(T_display, obj.Data);
+            end
         end
     end
 end

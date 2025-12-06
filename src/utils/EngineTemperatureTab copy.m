@@ -1,669 +1,752 @@
 classdef EngineTemperatureTab < handle
-    %ENGINETEMPERATURETAB Tab for analyzing engine temperature data
+    % EngineTemperatureTab
+    % Tab to analyze engine water and oil temperatures based on:
+    %   - Air temp
+    %   - Water & Oil radiator tapes
+    %   - Bellypan tape
+    %   - Sponge (L / M / NONE)
+    %   - Slipstream (0/1)
+    %   - Time (1 = long session)
     
-    properties (Access = private)
-        Tab                    matlab.ui.container.Tab
-        ParentFigure          matlab.ui.Figure
-        CSVPath               string
-        DataTable             table
-        UITable               matlab.ui.control.Table
-        AnalysisPanel         matlab.ui.container.Panel
-        PlotAxes              matlab.ui.control.UIAxes
-        StatsPanel            matlab.ui.container.Panel
-        LoadButton            matlab.ui.control.Button
-        SaveButton            matlab.ui.control.Button
+    properties
+        ParentTabGroup
+        ParentFigure
+        Tab
+        
+        MainGrid
+        
+        % Top filter panel
+        FilterPanel
+        SpongeFilterDropDown
+        SlipstreamFilterDropDown
+        SessionFilterDropDown
+        ReloadButton
+        LoadButton
+        SaveButton
+        
+        % Summary panel
+        SummaryPanel
+        SpongeSummaryTable
+        SlipstreamSummaryTable
+        
+        % Raw data table
+        RawPanel
+        RawTable
+        
+        % Plots
+        AxesWater
+        AxesOil
+        
+        % Data
+        CsvPath
+        Data table
+        FilteredRowIndices % Track which rows in obj.Data correspond to filtered display
     end
     
     methods
-        function obj = EngineTemperatureTab(parentTabGroup, parentFigure, csvPath)
-            %ENGINETEMPERATURETAB Constructor
-            %   parentTabGroup: TabGroup to add the engine temperature tab to
-            %   parentFigure: Main UIFigure for dialogs
-            %   csvPath: Path to CSV file for loading
+        function obj = EngineTemperatureTab(tabGroup, parentFigure, csvPath)
+            obj.ParentTabGroup = tabGroup;
+            obj.ParentFigure   = parentFigure;
+            obj.CsvPath        = csvPath;
             
-            obj.ParentFigure = parentFigure;
-            obj.CSVPath = string(csvPath);
-            
-            obj.createUI(parentTabGroup);
+            obj.createUI();
             obj.loadData();
+            obj.configureSessionFilter();
+            obj.refreshAll();
         end
+    end
+    
+    methods (Access = private)
         
-        function createUI(obj, parentTabGroup)
-            %CREATEUI Create all UI components for the Engine Temperature tab
-            
-            % Create the tab
-            obj.Tab = uitab(parentTabGroup);
+        function createUI(obj)
+            % Create tab
+            obj.Tab = uitab(obj.ParentTabGroup);
             obj.Tab.Title = 'Engine Temperature';
             
-            % Get tab dimensions (approximate, will adjust)
-            tabWidth = 1133;
-            tabHeight = 608;
+            % Main grid layout: 4 rows x 2 columns (added row for summary panel expansion)
+            obj.MainGrid = uigridlayout(obj.Tab, [4 2]);
+            obj.MainGrid.RowHeight   = {75, 75, '1x', '1x'}; % Row 1: 75px (filter), Row 2: 75px (summary = 150px total)
+            obj.MainGrid.ColumnWidth = {'1.5x', '1x'};
             
-            % --- Load and Save buttons (top left, same style as ChecklistTab) ---
-            buttonWidth = 100;
-            buttonSpacing = 5;
-            buttonHeight = 22;
-            buttonY = 580;
-            leftMarginButtons = 7;
+            %% Top filter panel (row 1, col 1)
+            obj.FilterPanel = uipanel(obj.MainGrid);
+            obj.FilterPanel.Title = 'Filters';
+            obj.FilterPanel.Layout.Row = 1;
+            obj.FilterPanel.Layout.Column = 1;
             
-            loadButtonX = leftMarginButtons;
-            saveButtonX = leftMarginButtons + buttonWidth + buttonSpacing;
+            filterGrid = uigridlayout(obj.FilterPanel, [1 9]);
+            % Dropdown columns are 1/3 smaller (2/3 of original size)
+            % Columns: Sponge label, Sponge dropdown, Slipstream label, Slipstream dropdown, 
+            %          Session label, Session dropdown, Reload button, Load button, Save button
+            % Making dropdown columns smaller - using 0.5x to ensure they're actually smaller
+            filterGrid.ColumnWidth = {'fit', '0.5x', 'fit', '0.5x', 'fit', '0.5x', 'fit', 'fit', 'fit'};
+            
+            % Sponge filter
+            uilabel(filterGrid, 'Text', 'Sponge', 'HorizontalAlignment', 'center');
+            obj.SpongeFilterDropDown = uidropdown(filterGrid, ...
+                'Items', {'All', 'L', 'M', 'NONE'}, ...
+                'Value', 'All', ...
+                'ValueChangedFcn', @(dd, event) obj.onFilterChanged());
+            
+            % Slipstream filter
+            uilabel(filterGrid, 'Text', 'Slipstream', 'HorizontalAlignment', 'center');
+            obj.SlipstreamFilterDropDown = uidropdown(filterGrid, ...
+                'Items', {'All', 'No slipstream (0)', 'Slipstream (1)'}, ...
+                'Value', 'All', ...
+                'ValueChangedFcn', @(dd, event) obj.onFilterChanged());
+            
+            % Session filter
+            uilabel(filterGrid, 'Text', 'Session', 'HorizontalAlignment', 'center');
+            obj.SessionFilterDropDown = uidropdown(filterGrid, ...
+                'Items', {'All'}, ...
+                'Value', 'All', ...
+                'ValueChangedFcn', @(dd, event) obj.onFilterChanged());
+            
+            % Reload button
+            obj.ReloadButton = uibutton(filterGrid, ...
+                'Text', 'Reload CSV', ...
+                'ButtonPushedFcn', @(btn, event) obj.onReloadButtonPushed());
             
             % Load button
-            obj.LoadButton = uibutton(obj.Tab, 'push');
-            obj.LoadButton.Text = 'Load';
-            obj.LoadButton.ButtonPushedFcn = @(src, event) obj.onLoadButtonPushed(src, event);
-            obj.LoadButton.Position = [loadButtonX buttonY buttonWidth buttonHeight];
-            obj.LoadButton.Visible = 'on';
-            obj.LoadButton.BackgroundColor = [0.94 0.94 0.94];
-            obj.LoadButton.FontColor = [0 0 0];
+            obj.LoadButton = uibutton(filterGrid, ...
+                'Text', 'Load', ...
+                'ButtonPushedFcn', @(btn, event) obj.onLoadButtonPushed());
             
             % Save button
-            obj.SaveButton = uibutton(obj.Tab, 'push');
-            obj.SaveButton.Text = 'Save';
-            obj.SaveButton.ButtonPushedFcn = @(src, event) obj.onSaveButtonPushed(src, event);
-            obj.SaveButton.Position = [saveButtonX buttonY buttonWidth buttonHeight];
-            obj.SaveButton.Visible = 'on';
-            obj.SaveButton.BackgroundColor = [0.94 0.94 0.94];
-            obj.SaveButton.FontColor = [0 0 0];
+            obj.SaveButton = uibutton(filterGrid, ...
+                'Text', 'Save', ...
+                'ButtonPushedFcn', @(btn, event) obj.onSaveButtonPushed());
             
-            % Move buttons to front
-            uistack(obj.LoadButton, 'top');
-            uistack(obj.SaveButton, 'top');
+            %% Summary panel (rows 1-2, col 2) - 1/4 taller than filter panel
+            obj.SummaryPanel = uipanel(obj.MainGrid);
+            obj.SummaryPanel.Title = 'Summary (Means by Sponge / Slipstream)';
+            obj.SummaryPanel.Layout.Row = [1 2];
+            obj.SummaryPanel.Layout.Column = 2;
             
-            % Create main data table (scrollable, showing columns A-J, 150 rows editable)
-            obj.UITable = uitable(obj.Tab);
-            obj.UITable.Position = [10 200 tabWidth - 320 350];
-            obj.UITable.ColumnEditable = true; % Make editable
+            summaryGrid = uigridlayout(obj.SummaryPanel, [1 2]);
+            summaryGrid.ColumnWidth = {'1x', '1x'};
             
-            % Create analysis panel on the right side (moved lower)
-            obj.AnalysisPanel = uipanel(obj.Tab);
-            obj.AnalysisPanel.Title = 'Analysis & Visualization';
-            obj.AnalysisPanel.Position = [tabWidth - 300 150 290 400];
+            % Sponge summary table
+            obj.SpongeSummaryTable = uitable(summaryGrid, ...
+                'ColumnEditable', false, ...
+                'RowName', []);
+            obj.SpongeSummaryTable.Layout.Row = 1;
+            obj.SpongeSummaryTable.Layout.Column = 1;
             
-            % Create plot axes (larger for better visibility)
-            obj.PlotAxes = uiaxes(obj.AnalysisPanel);
-            obj.PlotAxes.Position = [10 200 270 180];
-            obj.PlotAxes.Title.String = 'Water Temp vs Oil Temp';
-            obj.PlotAxes.XLabel.String = 'Water Temp (°C)';
-            obj.PlotAxes.YLabel.String = 'Oil Temp (°C)';
+            % Slipstream summary table
+            obj.SlipstreamSummaryTable = uitable(summaryGrid, ...
+                'ColumnEditable', false, ...
+                'RowName', []);
+            obj.SlipstreamSummaryTable.Layout.Row = 1;
+            obj.SlipstreamSummaryTable.Layout.Column = 2;
             
-            % Create statistics panel
-            obj.StatsPanel = uipanel(obj.AnalysisPanel);
-            obj.StatsPanel.Title = 'Statistics';
-            obj.StatsPanel.Position = [10 10 270 180];
+            %% Raw data panel (rows 2–4, col 1)
+            obj.RawPanel = uipanel(obj.MainGrid);
+            obj.RawPanel.Title = 'Raw Engine Temperature Data (CSV)';
+            obj.RawPanel.Layout.Row = [2 4];
+            obj.RawPanel.Layout.Column = 1;
+            obj.RawPanel.Scrollable = 'on'; % allow vertical scrolling when many rows
             
-            % Add analysis buttons (arranged in a grid, moved lower)
-            btnPlot = uibutton(obj.AnalysisPanel, 'push');
-            btnPlot.Text = 'Water vs Oil Temp';
-            btnPlot.Position = [10 160 130 25];
-            btnPlot.ButtonPushedFcn = @(src, event) obj.plotWaterVsOil();
+            rawGrid = uigridlayout(obj.RawPanel, [1 1]);
+            rawGrid.RowHeight   = {'1x'};
+            rawGrid.ColumnWidth = {'1x'};
             
-            btnSponge = uibutton(obj.AnalysisPanel, 'push');
-            btnSponge.Text = 'Compare Sponge (L vs M)';
-            btnSponge.Position = [150 160 130 25];
-            btnSponge.ButtonPushedFcn = @(src, event) obj.compareSponge();
+            obj.RawTable = uitable(rawGrid, ...
+                'ColumnEditable', true, ...
+                'RowName', [], ...
+                'CellEditCallback', @(src, event) obj.onTableCellEdit(src, event));
+            obj.RawTable.Layout.Row = 1;
+            obj.RawTable.Layout.Column = 1;
             
-            btnTapes = uibutton(obj.AnalysisPanel, 'push');
-            btnTapes.Text = 'Analyze Tape Effects';
-            btnTapes.Position = [10 130 130 25];
-            btnTapes.ButtonPushedFcn = @(src, event) obj.analyzeTapes();
+            % NOTE: width is up to column J because the data itself only has
+            % 10 columns; the table will automatically size to show them.
+            obj.RawTable.ColumnWidth = 'auto';
             
-            btnSlipstream = uibutton(obj.AnalysisPanel, 'push');
-            btnSlipstream.Text = 'Slipstream Effect';
-            btnSlipstream.Position = [150 130 130 25];
-            btnSlipstream.ButtonPushedFcn = @(src, event) obj.analyzeSlipstream();
+            % Apply center alignment style to all cells
+            centerStyle = uistyle('HorizontalAlignment', 'center');
+            addStyle(obj.RawTable, centerStyle);
             
-            btnAirTemp = uibutton(obj.AnalysisPanel, 'push');
-            btnAirTemp.Text = 'Air Temp Effect';
-            btnAirTemp.Position = [10 100 130 25];
-            btnAirTemp.ButtonPushedFcn = @(src, event) obj.analyzeAirTemp();
+            %% Water temp plot (row 3, col 2) - moved down since summary spans rows 1-2
+            obj.AxesWater = uiaxes(obj.MainGrid);
+            obj.AxesWater.Layout.Row = 3;
+            obj.AxesWater.Layout.Column = 2;
+            title(obj.AxesWater, 'Water temp vs Air temp');
+            xlabel(obj.AxesWater, 'Air temp [°C]');
+            ylabel(obj.AxesWater, 'Water temp [°C]');
+            grid(obj.AxesWater, 'on');
+            xlim(obj.AxesWater, [0 50]);
+            ylim(obj.AxesWater, [50 100]);
             
-            btnBellypan = uibutton(obj.AnalysisPanel, 'push');
-            btnBellypan.Text = 'Bellypan Effect';
-            btnBellypan.Position = [150 100 130 25];
-            btnBellypan.ButtonPushedFcn = @(src, event) obj.analyzeBellypan();
+            %% Oil temp plot (row 4, col 2)
+            obj.AxesOil = uiaxes(obj.MainGrid);
+            obj.AxesOil.Layout.Row = 4;
+            obj.AxesOil.Layout.Column = 2;
+            title(obj.AxesOil, 'Oil temp vs Air temp');
+            xlabel(obj.AxesOil, 'Air temp [°C]');
+            ylabel(obj.AxesOil, 'Oil temp [°C]');
+            grid(obj.AxesOil, 'on');
+            xlim(obj.AxesOil, [0 50]);
+            ylim(obj.AxesOil, [90 130]);
         end
         
         function loadData(obj)
-            %LOADDATA Load data from CSV file
-            try
-                if isfile(obj.CSVPath)
-                    obj.DataTable = readtable(obj.CSVPath, 'TextType', 'string');
-                    
-                    % Get number of columns (keep all columns)
-                    numCols = width(obj.DataTable);
-                    
-                    % Ensure we have at least 10 columns (A-J), pad if needed
-                    if numCols < 10
-                        % Add empty columns to reach 10
-                        for i = numCols+1:10
-                            obj.DataTable{:, end+1} = repmat({''}, height(obj.DataTable), 1);
-                            obj.DataTable.Properties.VariableNames{end} = sprintf('Column_%d', i);
-                        end
-                    end
-                    
-                    % Take first 10 columns for display
-                    displayTable = obj.DataTable(:, 1:10);
-                    
-                    % Ensure we have 150 rows (pad or truncate)
-                    if height(displayTable) < 150
-                        % Pad with empty rows matching data types
-                        needed = 150 - height(displayTable);
-                        emptyRows = table();
-                        for i = 1:width(displayTable)
-                            colName = displayTable.Properties.VariableNames{i};
-                            colData = displayTable{:, i};
-                            
-                            % Determine data type
-                            if isnumeric(colData) || islogical(colData)
-                                emptyRows{:, colName} = NaN(needed, 1);
-                            elseif iscategorical(colData)
-                                emptyRows{:, colName} = categorical(repmat({''}, needed, 1));
-                            else
-                                emptyRows{:, colName} = strings(needed, 1);
-                            end
-                        end
-                        displayTable = [displayTable; emptyRows];
-                    elseif height(displayTable) > 150
-                        % Truncate to 150 rows
-                        displayTable = displayTable(1:150, :);
-                    end
-                    
-                    obj.UITable.Data = displayTable;
-                    obj.UITable.ColumnName = displayTable.Properties.VariableNames;
-                    
-                    % Auto-size columns
-                    obj.UITable.ColumnWidth = repmat({'auto'}, 1, width(displayTable));
-                    
-                    % Update statistics
-                    obj.updateStatistics();
-                else
-                    % File doesn't exist - create empty table with 150 rows
-                    obj.createEmptyTable();
+            if isfile(obj.CsvPath)
+                try
+                    T = readtable(obj.CsvPath);
+                catch ME
+                    warning('EngineTemperatureTab:ReadError', ...
+                        'Error reading %s: %s', obj.CsvPath, ME.message);
+                    T = table();
                 end
-            catch ME
-                uialert(obj.ParentFigure, ...
-                    "Failed to load CSV: " + ME.message, ...
-                    'Load Error', 'Icon', 'error');
-                % Create empty table on error
-                obj.createEmptyTable();
+            else
+                warning('EngineTemperatureTab:CSVNotFound', ...
+                    'CSV file not found at: %s', obj.CsvPath);
+                T = table();
+            end
+            obj.Data = T;
+        end
+        
+        function configureSessionFilter(obj)
+            dd = obj.SessionFilterDropDown;
+            if isempty(obj.Data) || ~ismember('Session', obj.Data.Properties.VariableNames)
+                dd.Items = {'All'};
+                dd.Value = 'All';
+            else
+                sessions = unique(obj.Data.Session, 'stable');
+                sessionsStr = cellstr(string(sessions));
+                dd.Items = ['All', sessionsStr'];
+                if ~ismember(dd.Value, dd.Items)
+                    dd.Value = 'All';
+                end
             end
         end
         
-        function createEmptyTable(obj)
-            %CREATEEMPTYTABLE Create an empty table with 150 rows and 10 columns
-            % Use column names from CSV header if available, otherwise generic names
-            columnNames = {'Session', 'Air temp', 'Water rad tapes', 'Oil rad tapes', ...
-                          'Bellypan tape', 'Sponge', 'Water temp', 'Oil temp', ...
-                          'Slipstream', 'Time'};
+        function T = getFilteredData(obj)
+            T = obj.Data;
+            if isempty(T)
+                return;
+            end
             
-            % Create table with appropriate data types
-            % Column 1: Session (string)
-            % Column 2: Air temp (numeric)
-            % Column 3: Water rad tapes (numeric)
-            % Column 4: Oil rad tapes (numeric)
-            % Column 5: Bellypan tape (numeric)
-            % Column 6: Sponge (string)
-            % Column 7: Water temp (numeric)
-            % Column 8: Oil temp (numeric)
-            % Column 9: Slipstream (numeric)
-            % Column 10: Time (numeric)
+            % Store original indices before filtering
+            originalIndices = (1:height(T))';
             
-            emptyTable = table(...
-                strings(150, 1), ...      % Session
-                NaN(150, 1), ...          % Air temp
-                NaN(150, 1), ...          % Water rad tapes
-                NaN(150, 1), ...          % Oil rad tapes
-                NaN(150, 1), ...          % Bellypan tape
-                strings(150, 1), ...      % Sponge
-                NaN(150, 1), ...          % Water temp
-                NaN(150, 1), ...          % Oil temp
-                NaN(150, 1), ...          % Slipstream
-                NaN(150, 1), ...          % Time
-                'VariableNames', columnNames);
+            % Sponge filter
+            spongeValue = obj.SpongeFilterDropDown.Value;
+            if ~strcmp(spongeValue, 'All') && ismember('Sponge', T.Properties.VariableNames)
+                if strcmp(spongeValue, 'NONE')
+                    % rows with empty or missing sponge (if you ever add them)
+                    mask = ismissing(T.Sponge) | strcmpi(strtrim(string(T.Sponge)), '');
+                    T = T(mask, :);
+                    originalIndices = originalIndices(mask);
+                else
+                    mask = strcmp(string(T.Sponge), spongeValue);
+                    T = T(mask, :);
+                    originalIndices = originalIndices(mask);
+                end
+            end
             
-            obj.UITable.Data = emptyTable;
-            obj.UITable.ColumnName = columnNames;
-            obj.UITable.ColumnWidth = repmat({'auto'}, 1, 10);
+            % Slipstream filter
+            slipValue = obj.SlipstreamFilterDropDown.Value;
+            if ismember('Slipstream', T.Properties.VariableNames)
+                switch slipValue
+                    case 'No slipstream (0)'
+                        mask = T.Slipstream == 0;
+                        T = T(mask, :);
+                        originalIndices = originalIndices(mask);
+                    case 'Slipstream (1)'
+                        mask = T.Slipstream == 1;
+                        T = T(mask, :);
+                        originalIndices = originalIndices(mask);
+                    otherwise
+                        % 'All' -> no extra filter
+                end
+            end
             
-            % Initialize DataTable
-            obj.DataTable = emptyTable;
+            % Session filter
+            sessValue = obj.SessionFilterDropDown.Value;
+            if ~strcmp(sessValue, 'All') && ismember('Session', T.Properties.VariableNames)
+                mask = strcmp(string(T.Session), sessValue);
+                T = T(mask, :);
+                originalIndices = originalIndices(mask);
+            end
+            
+            % Store the mapping from filtered rows to original rows
+            obj.FilteredRowIndices = originalIndices;
         end
         
-        function onLoadButtonPushed(obj, ~, ~)
-            %ONLOADBUTTONPUSHED Load data from CSV
-            obj.loadData();
+        function refreshAll(obj)
+            T = obj.getFilteredData();
+            % Note: getFilteredData() now sets obj.FilteredRowIndices
+            obj.updateRawTable(T);
+            obj.updateSpongeSummary(T);
+            obj.updateSlipstreamSummary(T);
+            obj.updatePlots(T);
         end
         
-        function onSaveButtonPushed(obj, ~, ~)
-            %ONSAVEBUTTONPUSHED Save current table data to CSV
-            try
-                % Get data from UI table
-                tableData = obj.UITable.Data;
+        function updateRawTable(obj, T)
+            if isempty(T)
+                obj.RawTable.Data = {};
+                obj.RawTable.ColumnName = {};
+                obj.RawTable.ColumnEditable = [];
+                obj.RawTable.ColumnFormat = {};
+            else
+                % Format numeric columns to one decimal place
+                T_formatted = obj.formatTableForDisplay(T);
                 
-                % Ensure it's a table
-                if ~istable(tableData)
-                    % Convert cell array to table
-                    tableData = cell2table(tableData, 'VariableNames', obj.UITable.ColumnName);
+                % Determine which columns are editable (all except row identifiers if any)
+                numCols = width(T);
+                editable = true(1, numCols);
+                
+                % Set column formats for proper display
+                colFormats = cell(1, numCols);
+                varNames = T.Properties.VariableNames;
+                for i = 1:numCols
+                    colData = T.(varNames{i});
+                    formattedColData = T_formatted.(varNames{i});
+                    if isnumeric(colData) && ~islogical(colData)
+                        % Numeric columns are formatted as cell arrays of strings
+                        colFormats{i} = 'char';
+                    elseif islogical(colData)
+                        colFormats{i} = 'logical';
+                    else
+                        colFormats{i} = 'char';
+                    end
                 end
                 
-                % Remove completely empty rows (all cells empty/NaN/empty string)
-                if height(tableData) > 0
-                    emptyRows = false(height(tableData), 1);
-                    for i = 1:height(tableData)
-                        rowEmpty = true;
-                        for j = 1:width(tableData)
-                            val = tableData{i, j};
-                            if isnumeric(val) || islogical(val)
-                                if ~isnan(val)
-                                    rowEmpty = false;
-                                    break;
-                                end
-                            elseif isstring(val) || ischar(val)
-                                if ~isempty(strtrim(string(val)))
-                                    rowEmpty = false;
-                                    break;
-                                end
+                obj.RawTable.Data = T_formatted;
+                obj.RawTable.ColumnName = T.Properties.VariableNames;
+                obj.RawTable.ColumnEditable = editable;
+                obj.RawTable.ColumnFormat = colFormats;
+            end
+        end
+        
+        function T_formatted = formatTableForDisplay(obj, T)
+            %FORMATTABLEFORDISPLAY Format table for display with one decimal place for numbers
+            %   Returns a table with numeric columns formatted as strings with one decimal
+            T_formatted = T;
+            varNames = T.Properties.VariableNames;
+            
+            for i = 1:width(T)
+                colData = T.(varNames{i});
+                if isnumeric(colData) && ~islogical(colData)
+                    % Format numeric columns to one decimal place
+                    % Convert to string with one decimal, handling NaN
+                    formatted = cell(height(T), 1);
+                    for j = 1:height(T)
+                        if isnan(colData(j))
+                            formatted{j} = '';
+                        else
+                            formatted{j} = sprintf('%.1f', colData(j));
+                        end
+                    end
+                    T_formatted.(varNames{i}) = formatted;
+                end
+            end
+        end
+        
+        function T_numeric = unformatTableFromDisplay(obj, T_formatted, T_original)
+            %UNFORMATTABLEFROMDISPLAY Convert formatted display table back to numeric
+            %   T_formatted: table with formatted strings
+            %   T_original: original table with numeric types
+            T_numeric = T_original;
+            varNames = T_original.Properties.VariableNames;
+            
+            for i = 1:width(T_original)
+                if isnumeric(T_original.(varNames{i})) && ~islogical(T_original.(varNames{i}))
+                    % Convert formatted strings back to numbers
+                    formattedData = T_formatted.(varNames{i});
+                    numericData = nan(height(T_original), 1);
+                    for j = 1:height(T_original)
+                        if iscell(formattedData)
+                            val = formattedData{j};
+                        else
+                            val = formattedData(j);
+                        end
+                        if ischar(val) || isstring(val)
+                            valStr = string(val);
+                            if valStr == "" || ismissing(valStr)
+                                numericData(j) = nan;
                             else
-                                if ~isempty(val)
-                                    rowEmpty = false;
-                                    break;
-                                end
+                                numericData(j) = str2double(valStr);
+                            end
+                        else
+                            numericData(j) = val;
+                        end
+                    end
+                    T_numeric.(varNames{i}) = numericData;
+                elseif iscell(T_formatted.(varNames{i}))
+                    % For cell arrays, extract the actual values
+                    cellData = T_formatted.(varNames{i});
+                    if iscell(cellData)
+                        T_numeric.(varNames{i}) = cellData;
+                    else
+                        T_numeric.(varNames{i}) = T_formatted.(varNames{i});
+                    end
+                else
+                    T_numeric.(varNames{i}) = T_formatted.(varNames{i});
+                end
+            end
+        end
+        
+        function updateSpongeSummary(obj, T)
+            if isempty(T) || ~ismember('Sponge', T.Properties.VariableNames)
+                obj.SpongeSummaryTable.Data = {};
+                obj.SpongeSummaryTable.ColumnName = {};
+                return;
+            end
+            
+            % Only keep rows where water/oil temps exist
+            % Try both column name formats
+            if ismember('Water temp', T.Properties.VariableNames)
+                w = T.("Water temp");
+            elseif ismember('WaterTemp', T.Properties.VariableNames)
+                w = T.("WaterTemp");
+            else
+                w = [];
+            end
+            if ismember('Oil temp', T.Properties.VariableNames)
+                o = T.("Oil temp");
+            elseif ismember('OilTemp', T.Properties.VariableNames)
+                o = T.("OilTemp");
+            else
+                o = [];
+            end
+            
+            if isempty(w) || isempty(o)
+                obj.SpongeSummaryTable.Data = {};
+                obj.SpongeSummaryTable.ColumnName = {};
+                return;
+            end
+            
+            [G, sponges] = findgroups(T.Sponge);
+            meanWater = splitapply(@mean, w, G);
+            meanOil   = splitapply(@mean, o, G);
+            
+            % Optional: differences vs M
+            spongeStr = string(sponges);
+            dWater = nan(size(meanWater));
+            dOil   = nan(size(meanOil));
+            idxM = find(spongeStr == "M", 1);
+            if ~isempty(idxM)
+                dWater = meanWater - meanWater(idxM);
+                dOil   = meanOil   - meanOil(idxM);
+            end
+            
+            summary = table(spongeStr, meanWater, meanOil, dWater, dOil, ...
+                'VariableNames', {'Sponge', 'MeanWaterTemp', 'MeanOilTemp', ...
+                                  'DeltaWater_vs_M', 'DeltaOil_vs_M'});
+            
+            obj.SpongeSummaryTable.Data = summary;
+            obj.SpongeSummaryTable.ColumnName = summary.Properties.VariableNames;
+        end
+        
+        function updateSlipstreamSummary(obj, T)
+            if isempty(T) || ~ismember('Slipstream', T.Properties.VariableNames)
+                obj.SlipstreamSummaryTable.Data = {};
+                obj.SlipstreamSummaryTable.ColumnName = {};
+                return;
+            end
+            
+            % Try both column name formats
+            if ismember('Water temp', T.Properties.VariableNames)
+                w = T.("Water temp");
+            elseif ismember('WaterTemp', T.Properties.VariableNames)
+                w = T.("WaterTemp");
+            else
+                w = [];
+            end
+            if ismember('Oil temp', T.Properties.VariableNames)
+                o = T.("Oil temp");
+            elseif ismember('OilTemp', T.Properties.VariableNames)
+                o = T.("OilTemp");
+            else
+                o = [];
+            end
+            
+            if isempty(w) || isempty(o)
+                obj.SlipstreamSummaryTable.Data = {};
+                obj.SlipstreamSummaryTable.ColumnName = {};
+                return;
+            end
+            
+            [G, slipVals] = findgroups(T.Slipstream);
+            meanWater = splitapply(@mean, w, G);
+            meanOil   = splitapply(@mean, o, G);
+            
+            slipStr = "Slip " + string(slipVals);
+            summary = table(slipStr, slipVals, meanWater, meanOil, ...
+                'VariableNames', {'SlipLabel', 'Slipstream', 'MeanWaterTemp', 'MeanOilTemp'});
+            
+            obj.SlipstreamSummaryTable.Data = summary;
+            obj.SlipstreamSummaryTable.ColumnName = summary.Properties.VariableNames;
+        end
+        
+        function updatePlots(obj, T)
+            cla(obj.AxesWater);
+            cla(obj.AxesOil);
+            
+            % Try both column name formats (with and without spaces)
+            airColName = '';
+            if ismember('Air temp', T.Properties.VariableNames)
+                airColName = 'Air temp';
+            elseif ismember('AirTemp', T.Properties.VariableNames)
+                airColName = 'AirTemp';
+            end
+            
+            if isempty(T) || isempty(airColName)
+                return;
+            end
+            
+            air = T.(airColName);
+            
+            % Filter out NaN values
+            validIdx = ~isnan(air);
+            if ~any(validIdx)
+                return;
+            end
+            air = air(validIdx);
+            T_filtered = T(validIdx, :);
+            
+            % Water
+            waterColName = '';
+            if ismember('Water temp', T.Properties.VariableNames)
+                waterColName = 'Water temp';
+            elseif ismember('WaterTemp', T.Properties.VariableNames)
+                waterColName = 'WaterTemp';
+            end
+            
+            if ~isempty(waterColName) && ismember(waterColName, T_filtered.Properties.VariableNames)
+                w = T_filtered.(waterColName);
+                % Filter out NaN values for water temp
+                validWaterIdx = ~isnan(w);
+                if any(validWaterIdx)
+                    w = w(validWaterIdx);
+                    air_water = air(validWaterIdx);
+                    T_water = T_filtered(validWaterIdx, :);
+                    
+                    % Plot by sponge type
+                    if ismember('Sponge', T_water.Properties.VariableNames)
+                        sp = string(T_water.Sponge);
+                        spongeTypes = unique(sp(~ismissing(sp)), 'stable');
+                        hold(obj.AxesWater, 'on');
+                        for k = 1:numel(spongeTypes)
+                            mask = sp == spongeTypes(k);
+                            if any(mask)
+                                plot(obj.AxesWater, air_water(mask), w(mask), 'o-', ...
+                                    'DisplayName', char(spongeTypes(k)), 'LineWidth', 1.5, 'MarkerSize', 6);
                             end
                         end
-                        emptyRows(i) = rowEmpty;
+                        hold(obj.AxesWater, 'off');
+                        legend(obj.AxesWater, 'Location', 'best');
+                    else
+                        % No sponge column, just plot all points
+                        plot(obj.AxesWater, air_water, w, 'o-', 'LineWidth', 1.5, 'MarkerSize', 6);
                     end
-                    tableData = tableData(~emptyRows, :);
                 end
-                
-                % Write to CSV
-                writetable(tableData, obj.CSVPath);
-                
-                % Update internal DataTable (keep all 150 rows for UI)
-                obj.DataTable = obj.UITable.Data;
-                
-                % Update statistics
-                obj.updateStatistics();
-                
-                % Success (silent, like ChecklistTab)
+            end
+            
+            % Oil
+            oilColName = '';
+            if ismember('Oil temp', T.Properties.VariableNames)
+                oilColName = 'Oil temp';
+            elseif ismember('OilTemp', T.Properties.VariableNames)
+                oilColName = 'OilTemp';
+            end
+            
+            if ~isempty(oilColName) && ismember(oilColName, T_filtered.Properties.VariableNames)
+                o = T_filtered.(oilColName);
+                % Filter out NaN values for oil temp
+                validOilIdx = ~isnan(o);
+                if any(validOilIdx)
+                    o = o(validOilIdx);
+                    air_oil = air(validOilIdx);
+                    T_oil = T_filtered(validOilIdx, :);
+                    
+                    % Plot by sponge type
+                    if ismember('Sponge', T_oil.Properties.VariableNames)
+                        sp = string(T_oil.Sponge);
+                        spongeTypes = unique(sp(~ismissing(sp)), 'stable');
+                        hold(obj.AxesOil, 'on');
+                        for k = 1:numel(spongeTypes)
+                            mask = sp == spongeTypes(k);
+                            if any(mask)
+                                plot(obj.AxesOil, air_oil(mask), o(mask), 'o-', ...
+                                    'DisplayName', char(spongeTypes(k)), 'LineWidth', 1.5, 'MarkerSize', 6);
+                            end
+                        end
+                        hold(obj.AxesOil, 'off');
+                        legend(obj.AxesOil, 'Location', 'best');
+                    else
+                        % No sponge column, just plot all points
+                        plot(obj.AxesOil, air_oil, o, 'o-', 'LineWidth', 1.5, 'MarkerSize', 6);
+                    end
+                end
+            end
+            
+            % Reset axis limits
+            xlim(obj.AxesWater, [0 50]);
+            ylim(obj.AxesWater, [50 100]);
+            xlim(obj.AxesOil, [0 50]);
+            ylim(obj.AxesOil, [90 130]);
+        end
+        
+        %% Callbacks
+        
+        function onFilterChanged(obj)
+            obj.refreshAll();
+        end
+        
+        function onReloadButtonPushed(obj)
+            obj.loadData();
+            obj.configureSessionFilter();
+            obj.refreshAll();
+        end
+        
+        function onLoadButtonPushed(obj)
+            %ONLOADBUTTONPUSHED Load data from enginetemperature.csv automatically
+            try
+                if isfile(obj.CsvPath)
+                    T = readtable(obj.CsvPath);
+                    obj.Data = T;
+                    obj.configureSessionFilter();
+                    obj.refreshAll();
+                else
+                    uialert(obj.ParentFigure, ...
+                        sprintf('CSV file not found at: %s', obj.CsvPath), ...
+                        'Load Error', 'Icon', 'warning');
+                end
             catch ME
                 uialert(obj.ParentFigure, ...
-                    "Save failed: " + ME.message, ...
+                    sprintf('Error loading CSV file:\n%s', ME.message), ...
+                    'Load Error', 'Icon', 'error');
+            end
+        end
+        
+        function onSaveButtonPushed(obj)
+            %ONSAVEBUTTONPUSHED Save current table data to enginetemperature.csv automatically
+            try
+                % Update Data from table to ensure we have the latest edits
+                obj.updateDataFromTable();
+                if ~isempty(obj.Data)
+                    writetable(obj.Data, obj.CsvPath);
+                else
+                    uialert(obj.ParentFigure, ...
+                        'No data to save', 'Save Error', 'Icon', 'warning');
+                end
+            catch ME
+                uialert(obj.ParentFigure, ...
+                    sprintf('Error saving CSV file:\n%s', ME.message), ...
                     'Save Error', 'Icon', 'error');
             end
         end
         
-        function updateStatistics(obj)
-            %UPDATESTATISTICS Update the statistics panel
-            if isempty(obj.DataTable) || height(obj.DataTable) == 0
+        function onTableCellEdit(obj, src, event)
+            %ONTABLECELLEDIT Handle cell edit in the raw table
+            %   Update the underlying Data property when user edits a cell
+            indices = event.Indices;
+            newData = event.NewData;
+            
+            % Get current table data (formatted display)
+            T_display = src.Data;
+            if ~istable(T_display)
                 return;
             end
             
-            % Clear previous statistics
-            delete(obj.StatsPanel.Children);
+            row = indices(1);  % Row in filtered/displayed table
+            col = indices(2);
+            varNames = T_display.Properties.VariableNames;
+            colName = varNames{col};
             
-            % Calculate statistics
-            stats = {};
-            
-            % Water temp stats
-            if ismember('Water temp', obj.DataTable.Properties.VariableNames)
-                waterTemps = obj.DataTable{'Water temp'};
-                waterTemps = waterTemps(~isnan(waterTemps));
-                if ~isempty(waterTemps)
-                    stats{end+1} = sprintf('Water Temp: %.1f - %.1f °C (avg: %.1f)', ...
-                        min(waterTemps), max(waterTemps), mean(waterTemps));
-                end
-            end
-            
-            % Oil temp stats
-            if ismember('Oil temp', obj.DataTable.Properties.VariableNames)
-                oilTemps = obj.DataTable{'Oil temp'};
-                oilTemps = oilTemps(~isnan(oilTemps));
-                if ~isempty(oilTemps)
-                    stats{end+1} = sprintf('Oil Temp: %.1f - %.1f °C (avg: %.1f)', ...
-                        min(oilTemps), max(oilTemps), mean(oilTemps));
-                end
-            end
-            
-            % Sponge distribution
-            if ismember('Sponge', obj.DataTable.Properties.VariableNames)
-                spongeTypes = categorical(obj.DataTable.Sponge);
-                uniqueSponges = categories(spongeTypes);
-                for i = 1:length(uniqueSponges)
-                    count = sum(spongeTypes == uniqueSponges{i});
-                    stats{end+1} = sprintf('Sponge %s: %d sessions', uniqueSponges{i}, count);
-                end
-            end
-            
-            % Display statistics as labels
-            yPos = 140;
-            for i = 1:length(stats)
-                lbl = uilabel(obj.StatsPanel);
-                lbl.Text = stats{i};
-                lbl.Position = [10 yPos 260 20];
-                lbl.FontSize = 10;
-                yPos = yPos - 25;
-            end
-        end
-        
-        function plotWaterVsOil(obj)
-            %PLOTWATERVSOIL Plot water temperature vs oil temperature
-            if isempty(obj.DataTable) || ...
-               ~ismember('Water temp', obj.DataTable.Properties.VariableNames) || ...
-               ~ismember('Oil temp', obj.DataTable.Properties.VariableNames)
-                uialert(obj.ParentFigure, 'Data not available for plotting', ...
-                    'Plot Error', 'Icon', 'error');
+            % Get the original data structure to determine type
+            if isempty(obj.Data) || ~ismember(colName, obj.Data.Properties.VariableNames)
                 return;
             end
             
-            waterTemps = obj.DataTable{'Water temp'};
-            oilTemps = obj.DataTable{'Oil temp'};
-            
-            % Remove NaN values
-            validIdx = ~isnan(waterTemps) & ~isnan(oilTemps);
-            waterTemps = waterTemps(validIdx);
-            oilTemps = oilTemps(validIdx);
-            
-            if isempty(waterTemps)
-                uialert(obj.ParentFigure, 'No valid data points for plotting', ...
-                    'Plot Error', 'Icon', 'error');
-                return;
-            end
-            
-            % Plot with color coding by Sponge if available
-            cla(obj.PlotAxes);
-            hold(obj.PlotAxes, 'on');
-            
-            if ismember('Sponge', obj.DataTable.Properties.VariableNames)
-                spongeTypes = categorical(obj.DataTable.Sponge(validIdx));
-                uniqueSponges = categories(spongeTypes);
-                colors = lines(length(uniqueSponges));
-                
-                for i = 1:length(uniqueSponges)
-                    idx = spongeTypes == uniqueSponges{i};
-                    scatter(obj.PlotAxes, waterTemps(idx), oilTemps(idx), ...
-                        50, colors(i,:), 'filled', 'DisplayName', char(uniqueSponges{i}));
-                end
-                legend(obj.PlotAxes, 'Location', 'best');
+            % Map filtered row index to original data row index
+            if ~isempty(obj.FilteredRowIndices) && row <= length(obj.FilteredRowIndices)
+                originalRow = obj.FilteredRowIndices(row);
             else
-                scatter(obj.PlotAxes, waterTemps, oilTemps, 50, 'filled');
+                % Fallback: assume row matches (no filtering or mapping lost)
+                originalRow = row;
             end
             
-            hold(obj.PlotAxes, 'off');
-            obj.PlotAxes.Title.String = 'Water Temp vs Oil Temp';
-            obj.PlotAxes.XLabel.String = 'Water Temp (°C)';
-            obj.PlotAxes.YLabel.String = 'Oil Temp (°C)';
-            grid(obj.PlotAxes, 'on');
+            originalColData = obj.Data.(colName);
+            
+            % Convert new value based on original column type
+            if isnumeric(originalColData) && ~islogical(originalColData)
+                % Numeric column - convert string input to number
+                if ischar(newData) || isstring(newData) || iscell(newData)
+                    if iscell(newData)
+                        valStr = string(newData{1});
+                    else
+                        valStr = string(newData);
+                    end
+                    if valStr == "" || ismissing(valStr)
+                        numVal = nan;
+                    else
+                        numVal = str2double(valStr);
+                        if isnan(numVal)
+                            % Invalid number - revert
+                            uialert(obj.ParentFigure, ...
+                                'Invalid number. Please enter a numeric value.', ...
+                                'Invalid Input', 'Icon', 'warning');
+                            % Revert the cell
+                            T_display.(colName)(row) = event.PreviousData;
+                            src.Data = T_display;
+                            return;
+                        end
+                    end
+                else
+                    numVal = newData;
+                end
+                % Update original data at the correct row
+                if originalRow <= height(obj.Data)
+                    obj.Data.(colName)(originalRow) = numVal;
+                end
+                % Format for display
+                if isnan(numVal)
+                    T_display.(colName)(row) = {''};
+                else
+                    T_display.(colName)(row) = {sprintf('%.1f', numVal)};
+                end
+            elseif islogical(originalColData)
+                % Logical column
+                if originalRow <= height(obj.Data)
+                    obj.Data.(colName)(originalRow) = logical(newData);
+                end
+                T_display.(colName)(row) = logical(newData);
+            else
+                % String/cell column
+                if originalRow <= height(obj.Data)
+                    obj.Data.(colName)(originalRow) = newData;
+                end
+                T_display.(colName)(row) = newData;
+            end
+            
+            % Update display
+            src.Data = T_display;
+            
+            % Refresh other displays (but don't refresh the table itself to avoid flicker)
+            T_filtered = obj.getFilteredData();
+            obj.updateSpongeSummary(T_filtered);
+            obj.updateSlipstreamSummary(T_filtered);
+            obj.updatePlots(T_filtered);
         end
         
-        function compareSponge(obj)
-            %COMPARESPONGE Compare temperature differences between L and M sponge
-            if isempty(obj.DataTable) || ...
-               ~ismember('Sponge', obj.DataTable.Properties.VariableNames) || ...
-               ~ismember('Water temp', obj.DataTable.Properties.VariableNames) || ...
-               ~ismember('Oil temp', obj.DataTable.Properties.VariableNames)
-                uialert(obj.ParentFigure, 'Data not available for comparison', ...
-                    'Analysis Error', 'Icon', 'error');
+        function updateDataFromTable(obj)
+            %UPDATEDATAFROMTABLE Update Data property from current table display
+            %   This is called before saving to ensure Data is up to date
+            %   The Data property should already be updated via cell edit callbacks
+            %   This is mainly for safety/consistency
+            T_display = obj.RawTable.Data;
+            if ~istable(T_display) || isempty(T_display)
                 return;
             end
             
-            % Filter data by sponge type
-            L_idx = obj.DataTable.Sponge == 'L';
-            M_idx = obj.DataTable.Sponge == 'M';
-            
-            if ~any(L_idx) || ~any(M_idx)
-                uialert(obj.ParentFigure, 'Need both L and M sponge data for comparison', ...
-                    'Analysis Error', 'Icon', 'error');
-                return;
+            % Convert formatted display back to numeric for all columns
+            if ~isempty(obj.Data)
+                obj.Data = obj.unformatTableFromDisplay(T_display, obj.Data);
             end
-            
-            % Calculate statistics
-            L_water = obj.DataTable{L_idx, 'Water temp'};
-            L_oil = obj.DataTable{L_idx, 'Oil temp'};
-            M_water = obj.DataTable{M_idx, 'Water temp'};
-            M_oil = obj.DataTable{M_idx, 'Oil temp'};
-            
-            % Remove NaN
-            L_water = L_water(~isnan(L_water));
-            L_oil = L_oil(~isnan(L_oil));
-            M_water = M_water(~isnan(M_water));
-            M_oil = M_oil(~isnan(M_oil));
-            
-            % Create comparison plot
-            cla(obj.PlotAxes);
-            hold(obj.PlotAxes, 'on');
-            
-            scatter(obj.PlotAxes, L_water, L_oil, 50, [0 0.5 1], 'filled', 'DisplayName', 'Sponge L');
-            scatter(obj.PlotAxes, M_water, M_oil, 50, [1 0.5 0], 'filled', 'DisplayName', 'Sponge M');
-            
-            hold(obj.PlotAxes, 'off');
-            obj.PlotAxes.Title.String = 'Sponge Comparison: L vs M';
-            obj.PlotAxes.XLabel.String = 'Water Temp (°C)';
-            obj.PlotAxes.YLabel.String = 'Oil Temp (°C)';
-            legend(obj.PlotAxes, 'Location', 'best');
-            grid(obj.PlotAxes, 'on');
-            
-            % Display differences
-            msg = sprintf(['Sponge Comparison:\n\n' ...
-                'L Sponge:\n' ...
-                '  Water: %.1f°C avg (%.1f - %.1f)\n' ...
-                '  Oil: %.1f°C avg (%.1f - %.1f)\n\n' ...
-                'M Sponge:\n' ...
-                '  Water: %.1f°C avg (%.1f - %.1f)\n' ...
-                '  Oil: %.1f°C avg (%.1f - %.1f)\n\n' ...
-                'Difference (L - M):\n' ...
-                '  Water: %.1f°C\n' ...
-                '  Oil: %.1f°C'], ...
-                mean(L_water), min(L_water), max(L_water), ...
-                mean(L_oil), min(L_oil), max(L_oil), ...
-                mean(M_water), min(M_water), max(M_water), ...
-                mean(M_oil), min(M_oil), max(M_oil), ...
-                mean(L_water) - mean(M_water), ...
-                mean(L_oil) - mean(M_oil));
-            
-            uialert(obj.ParentFigure, msg, 'Sponge Comparison', 'Icon', 'none');
-        end
-        
-        function analyzeTapes(obj)
-            %ANALYZETAPES Analyze the effect of radiator tapes on temperatures
-            if isempty(obj.DataTable) || ...
-               ~ismember('Water rad tapes', obj.DataTable.Properties.VariableNames) || ...
-               ~ismember('Oil rad tapes', obj.DataTable.Properties.VariableNames)
-                uialert(obj.ParentFigure, 'Tape data not available', ...
-                    'Analysis Error', 'Icon', 'error');
-                return;
-            end
-            
-            % Create scatter plot with tape count as color
-            waterTemps = obj.DataTable{'Water temp'};
-            oilTemps = obj.DataTable{'Oil temp'};
-            waterTapes = obj.DataTable{'Water rad tapes'};
-            oilTapes = obj.DataTable{'Oil rad tapes'};
-            
-            validIdx = ~isnan(waterTemps) & ~isnan(oilTemps) & ...
-                       ~isnan(waterTapes) & ~isnan(oilTapes);
-            
-            if ~any(validIdx)
-                uialert(obj.ParentFigure, 'No valid data for tape analysis', ...
-                    'Analysis Error', 'Icon', 'error');
-                return;
-            end
-            
-            % Plot with total tape count as color
-            totalTapes = waterTapes(validIdx) + oilTapes(validIdx);
-            
-            cla(obj.PlotAxes);
-            scatter(obj.PlotAxes, waterTemps(validIdx), oilTemps(validIdx), ...
-                50, totalTapes, 'filled');
-            colorbar(obj.PlotAxes);
-            obj.PlotAxes.Title.String = 'Temperature vs Total Tapes (Water + Oil)';
-            obj.PlotAxes.XLabel.String = 'Water Temp (°C)';
-            obj.PlotAxes.YLabel.String = 'Oil Temp (°C)';
-            grid(obj.PlotAxes, 'on');
-        end
-        
-        function analyzeSlipstream(obj)
-            %ANALYZESLIPSTREAM Analyze the effect of slipstream on temperatures
-            if isempty(obj.DataTable) || ...
-               ~ismember('Slipstream', obj.DataTable.Properties.VariableNames)
-                uialert(obj.ParentFigure, 'Slipstream data not available', ...
-                    'Analysis Error', 'Icon', 'error');
-                return;
-            end
-            
-            % Compare temperatures with and without slipstream
-            noSlip = obj.DataTable.Slipstream == 0;
-            withSlip = obj.DataTable.Slipstream == 1;
-            
-            if ~any(noSlip) || ~any(withSlip)
-                uialert(obj.ParentFigure, 'Need both slipstream conditions for comparison', ...
-                    'Analysis Error', 'Icon', 'error');
-                return;
-            end
-            
-            waterTemps = obj.DataTable{'Water temp'};
-            oilTemps = obj.DataTable{'Oil temp'};
-            
-            noSlip_water = waterTemps(noSlip & ~isnan(waterTemps));
-            noSlip_oil = oilTemps(noSlip & ~isnan(oilTemps));
-            withSlip_water = waterTemps(withSlip & ~isnan(waterTemps));
-            withSlip_oil = oilTemps(withSlip & ~isnan(oilTemps));
-            
-            % Plot comparison
-            cla(obj.PlotAxes);
-            hold(obj.PlotAxes, 'on');
-            
-            scatter(obj.PlotAxes, noSlip_water, noSlip_oil, 50, [0 0.8 0], ...
-                'filled', 'DisplayName', 'No Slipstream');
-            scatter(obj.PlotAxes, withSlip_water, withSlip_oil, 50, [0.8 0 0], ...
-                'filled', 'DisplayName', 'With Slipstream');
-            
-            hold(obj.PlotAxes, 'off');
-            obj.PlotAxes.Title.String = 'Slipstream Effect on Temperatures';
-            obj.PlotAxes.XLabel.String = 'Water Temp (°C)';
-            obj.PlotAxes.YLabel.String = 'Oil Temp (°C)';
-            legend(obj.PlotAxes, 'Location', 'best');
-            grid(obj.PlotAxes, 'on');
-            
-            % Display statistics
-            msg = sprintf(['Slipstream Analysis:\n\n' ...
-                'No Slipstream:\n' ...
-                '  Water: %.1f°C avg\n' ...
-                '  Oil: %.1f°C avg\n\n' ...
-                'With Slipstream:\n' ...
-                '  Water: %.1f°C avg\n' ...
-                '  Oil: %.1f°C avg\n\n' ...
-                'Temperature Difference:\n' ...
-                '  Water: %.1f°C\n' ...
-                '  Oil: %.1f°C'], ...
-                mean(noSlip_water), mean(noSlip_oil), ...
-                mean(withSlip_water), mean(withSlip_oil), ...
-                mean(noSlip_water) - mean(withSlip_water), ...
-                mean(noSlip_oil) - mean(withSlip_oil));
-            
-            uialert(obj.ParentFigure, msg, 'Slipstream Analysis', 'Icon', 'none');
-        end
-        
-        function analyzeAirTemp(obj)
-            %ANALYZEAIRTEMP Analyze the effect of air temperature on engine temperatures
-            if isempty(obj.DataTable) || ...
-               ~ismember('Air temp', obj.DataTable.Properties.VariableNames)
-                uialert(obj.ParentFigure, 'Air temperature data not available', ...
-                    'Analysis Error', 'Icon', 'error');
-                return;
-            end
-            
-            airTemps = obj.DataTable{'Air temp'};
-            waterTemps = obj.DataTable{'Water temp'};
-            oilTemps = obj.DataTable{'Oil temp'};
-            
-            validIdx = ~isnan(airTemps) & ~isnan(waterTemps) & ~isnan(oilTemps);
-            
-            if ~any(validIdx)
-                uialert(obj.ParentFigure, 'No valid data for air temperature analysis', ...
-                    'Analysis Error', 'Icon', 'error');
-                return;
-            end
-            
-            % Plot water temp vs air temp
-            cla(obj.PlotAxes);
-            yyaxis(obj.PlotAxes, 'left');
-            scatter(obj.PlotAxes, airTemps(validIdx), waterTemps(validIdx), ...
-                50, 'filled', 'DisplayName', 'Water Temp');
-            obj.PlotAxes.YLabel.String = 'Water Temp (°C)';
-            obj.PlotAxes.YColor = [0 0.5 1];
-            
-            yyaxis(obj.PlotAxes, 'right');
-            scatter(obj.PlotAxes, airTemps(validIdx), oilTemps(validIdx), ...
-                50, 'filled', 'DisplayName', 'Oil Temp');
-            obj.PlotAxes.YLabel.String = 'Oil Temp (°C)';
-            obj.PlotAxes.YColor = [1 0.5 0];
-            
-            obj.PlotAxes.Title.String = 'Engine Temperatures vs Air Temperature';
-            obj.PlotAxes.XLabel.String = 'Air Temperature (°C)';
-            grid(obj.PlotAxes, 'on');
-            legend(obj.PlotAxes, 'Location', 'best');
-        end
-        
-        function analyzeBellypan(obj)
-            %ANALYZEBELLYPAN Analyze the effect of bellypan tape on oil temperature
-            if isempty(obj.DataTable) || ...
-               ~ismember('Bellypan tape', obj.DataTable.Properties.VariableNames) || ...
-               ~ismember('Oil temp', obj.DataTable.Properties.VariableNames)
-                uialert(obj.ParentFigure, 'Bellypan data not available', ...
-                    'Analysis Error', 'Icon', 'error');
-                return;
-            end
-            
-            % Compare oil temperatures with and without bellypan tape
-            bellypanOn = obj.DataTable{'Bellypan tape'} == 1;
-            bellypanOff = obj.DataTable{'Bellypan tape'} == 0;
-            
-            if ~any(bellypanOn) || ~any(bellypanOff)
-                uialert(obj.ParentFigure, 'Need both bellypan conditions for comparison', ...
-                    'Analysis Error', 'Icon', 'error');
-                return;
-            end
-            
-            oilTemps = obj.DataTable{'Oil temp'};
-            waterTemps = obj.DataTable{'Water temp'};
-            
-            on_oil = oilTemps(bellypanOn & ~isnan(oilTemps));
-            off_oil = oilTemps(bellypanOff & ~isnan(oilTemps));
-            on_water = waterTemps(bellypanOn & ~isnan(waterTemps));
-            off_water = waterTemps(bellypanOff & ~isnan(waterTemps));
-            
-            % Plot comparison
-            cla(obj.PlotAxes);
-            hold(obj.PlotAxes, 'on');
-            
-            scatter(obj.PlotAxes, on_water, on_oil, 50, [0.8 0 0], ...
-                'filled', 'DisplayName', 'Bellypan ON');
-            scatter(obj.PlotAxes, off_water, off_oil, 50, [0 0 0.8], ...
-                'filled', 'DisplayName', 'Bellypan OFF');
-            
-            hold(obj.PlotAxes, 'off');
-            obj.PlotAxes.Title.String = 'Bellypan Tape Effect on Oil Temperature';
-            obj.PlotAxes.XLabel.String = 'Water Temp (°C)';
-            obj.PlotAxes.YLabel.String = 'Oil Temp (°C)';
-            legend(obj.PlotAxes, 'Location', 'best');
-            grid(obj.PlotAxes, 'on');
-            
-            % Display statistics
-            msg = sprintf(['Bellypan Analysis:\n\n' ...
-                'Bellypan ON:\n' ...
-                '  Oil: %.1f°C avg (%.1f - %.1f)\n\n' ...
-                'Bellypan OFF:\n' ...
-                '  Oil: %.1f°C avg (%.1f - %.1f)\n\n' ...
-                'Temperature Difference:\n' ...
-                '  Oil: %.1f°C'], ...
-                mean(on_oil), min(on_oil), max(on_oil), ...
-                mean(off_oil), min(off_oil), max(off_oil), ...
-                mean(on_oil) - mean(off_oil));
-            
-            uialert(obj.ParentFigure, msg, 'Bellypan Analysis', 'Icon', 'none');
         end
     end
 end
-
