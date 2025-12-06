@@ -27,6 +27,12 @@ classdef main < matlab.apps.AppBase
         ChecklistTabComponent      % ChecklistTab instance
         EngineTemperatureTabComponent  % EngineTemperatureTab instance
         ConsumptionTabComponent   % ConsumptionTab instance
+        TyresTabComponent         % Tyres tab instance
+        FuelInjectionTabComponent % Fuel Injection tab instance
+        EngineBrakeTabComponent   % Engine Brake tab instance
+        RythmTabComponent         % Rythm tab instance
+        FileShareTabComponent     % File Share tab instance
+        HondaSheetsTabComponent   % Honda Sheets tab instance
     end
     
     methods (Access = private)
@@ -57,6 +63,14 @@ classdef main < matlab.apps.AppBase
             % Initialize Consumption tab
             consumptionPath = fullfile(dataDir, 'consumption.csv');
             app.ConsumptionTabComponent = ConsumptionTab(app.TabGroup, app.UIFigure, consumptionPath);
+            
+            % Initialize empty placeholder tabs
+            app.TyresTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Tyres');
+            app.FuelInjectionTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Fuel Injection');
+            app.EngineBrakeTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Engine Brake');
+            app.RythmTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Rythm');
+            app.FileShareTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'File Share');
+            app.HondaSheetsTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Honda Sheets');
         end
     end
 
@@ -73,14 +87,29 @@ classdef main < matlab.apps.AppBase
             app.UIFigure.Pointer = 'arrow';
             app.UIFigure.Color = [0.3 0.3 0.3]; % Dark grey background
 
-            % Create TabGroup
+            % Create TabGroup - positioned at the top
             app.TabGroup = uitabgroup(app.UIFigure);
-            app.TabGroup.Position = [1 1 1133 608];
-            % Note: TabGroup doesn't support BackgroundColor property
+            app.TabGroup.Position = [1 1 1133 632]; % Full height, starting from top
+            % Try to set background color (may not be supported in all MATLAB versions)
+            try
+                app.TabGroup.BackgroundColor = [0.3 0.3 0.3]; % Dark grey
+            catch
+                % BackgroundColor may not be supported for TabGroup
+            end
 
             % Create MainTab
             app.MainTab = uitab(app.TabGroup);
             app.MainTab.Title = 'Main';
+            % Set tab background to dark grey
+            try
+                app.MainTab.BackgroundColor = [0.3 0.3 0.3]; % Dark grey
+            catch
+                % BackgroundColor may not be directly supported, will set via container
+            end
+            
+            % Create a container for MainTab with dark grey background
+            mainGrid = uigridlayout(app.MainTab, [1 1]);
+            mainGrid.BackgroundColor = [0.3 0.3 0.3]; % Dark grey background
 
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';

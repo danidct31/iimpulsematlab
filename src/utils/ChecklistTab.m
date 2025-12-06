@@ -385,7 +385,13 @@ classdef ChecklistTab < handle
             % Create ChecklistTab
             obj.Tab = uitab(parentTabGroup);
             obj.Tab.Title = 'Checklist';
-            obj.Tab.BackgroundColor = [0.3 0.3 0.3]; % Dark grey background
+            
+            % Try to set tab background to dark grey
+            try
+                obj.Tab.BackgroundColor = [0.3 0.3 0.3]; % Dark grey
+            catch
+                % BackgroundColor may not be directly supported
+            end
             
             % App width
             appWidth   = 1133;  % or parentTabGroup.Position(3);

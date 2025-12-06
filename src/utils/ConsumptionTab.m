@@ -75,6 +75,13 @@ classdef ConsumptionTab < handle
             obj.Tab = uitab(obj.ParentTabGroup);
             obj.Tab.Title = 'Consumption';
             
+            % Try to set tab background to dark grey
+            try
+                obj.Tab.BackgroundColor = [0.3 0.3 0.3]; % Dark grey
+            catch
+                % BackgroundColor may not be directly supported
+            end
+            
             % Main grid layout: header row + 2 rows of 3 session blocks
             obj.MainGrid = uigridlayout(obj.Tab, [3 3]);
             obj.MainGrid.RowHeight = {'fit', '1x', '1x'};
@@ -82,6 +89,7 @@ classdef ConsumptionTab < handle
             obj.MainGrid.RowSpacing = 10;
             obj.MainGrid.ColumnSpacing = 10;
             obj.MainGrid.Padding = [10 10 10 10];
+            obj.MainGrid.BackgroundColor = [0.3 0.3 0.3]; % Dark grey background
             
             %% Top row: Track distance and buttons (spans all 3 columns)
             topPanel = uipanel(obj.MainGrid);

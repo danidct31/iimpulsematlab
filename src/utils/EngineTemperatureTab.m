@@ -63,10 +63,18 @@ classdef EngineTemperatureTab < handle
             obj.Tab = uitab(obj.ParentTabGroup);
             obj.Tab.Title = 'Engine Temperature';
             
+            % Try to set tab background to dark grey
+            try
+                obj.Tab.BackgroundColor = [0.3 0.3 0.3]; % Dark grey
+            catch
+                % BackgroundColor may not be directly supported
+            end
+            
             % Main grid layout: 4 rows x 2 columns (added row for summary panel expansion)
             obj.MainGrid = uigridlayout(obj.Tab, [4 2]);
             obj.MainGrid.RowHeight   = {75, 75, '1x', '1x'}; % Row 1: 75px (filter), Row 2: 75px (summary = 150px total)
             obj.MainGrid.ColumnWidth = {'1.5x', '1x'};
+            obj.MainGrid.BackgroundColor = [0.3 0.3 0.3]; % Dark grey background
             
             %% Top filter panel (row 1, col 1)
             obj.FilterPanel = uipanel(obj.MainGrid);
@@ -170,9 +178,13 @@ classdef EngineTemperatureTab < handle
             obj.AxesWater = uiaxes(obj.MainGrid);
             obj.AxesWater.Layout.Row = 3;
             obj.AxesWater.Layout.Column = 2;
-            title(obj.AxesWater, 'Water temp vs Air temp');
-            xlabel(obj.AxesWater, 'Air temp [°C]');
-            ylabel(obj.AxesWater, 'Water temp [°C]');
+            obj.AxesWater.Color = [0.3 0.3 0.3]; % Dark grey background
+            obj.AxesWater.XColor = [1 1 1]; % White x-axis
+            obj.AxesWater.YColor = [1 1 1]; % White y-axis
+            obj.AxesWater.GridColor = [0.7 0.7 0.7]; % Light grey grid
+            title(obj.AxesWater, 'Water temp vs Air temp', 'Color', [1 1 1]); % White title
+            xlabel(obj.AxesWater, 'Air temp [°C]', 'Color', [1 1 1]); % White xlabel
+            ylabel(obj.AxesWater, 'Water temp [°C]', 'Color', [1 1 1]); % White ylabel
             grid(obj.AxesWater, 'on');
             xlim(obj.AxesWater, [0 50]);
             ylim(obj.AxesWater, [50 100]);
@@ -181,9 +193,13 @@ classdef EngineTemperatureTab < handle
             obj.AxesOil = uiaxes(obj.MainGrid);
             obj.AxesOil.Layout.Row = 4;
             obj.AxesOil.Layout.Column = 2;
-            title(obj.AxesOil, 'Oil temp vs Air temp');
-            xlabel(obj.AxesOil, 'Air temp [°C]');
-            ylabel(obj.AxesOil, 'Oil temp [°C]');
+            obj.AxesOil.Color = [0.3 0.3 0.3]; % Dark grey background
+            obj.AxesOil.XColor = [1 1 1]; % White x-axis
+            obj.AxesOil.YColor = [1 1 1]; % White y-axis
+            obj.AxesOil.GridColor = [0.7 0.7 0.7]; % Light grey grid
+            title(obj.AxesOil, 'Oil temp vs Air temp', 'Color', [1 1 1]); % White title
+            xlabel(obj.AxesOil, 'Air temp [°C]', 'Color', [1 1 1]); % White xlabel
+            ylabel(obj.AxesOil, 'Oil temp [°C]', 'Color', [1 1 1]); % White ylabel
             grid(obj.AxesOil, 'on');
             xlim(obj.AxesOil, [0 50]);
             ylim(obj.AxesOil, [90 130]);
@@ -588,6 +604,22 @@ classdef EngineTemperatureTab < handle
             ylim(obj.AxesWater, [50 100]);
             xlim(obj.AxesOil, [0 50]);
             ylim(obj.AxesOil, [90 130]);
+            
+            % Ensure labels remain white after plotting
+            title(obj.AxesWater, 'Water temp vs Air temp', 'Color', [1 1 1]);
+            xlabel(obj.AxesWater, 'Air temp [°C]', 'Color', [1 1 1]);
+            ylabel(obj.AxesWater, 'Water temp [°C]', 'Color', [1 1 1]);
+            title(obj.AxesOil, 'Oil temp vs Air temp', 'Color', [1 1 1]);
+            xlabel(obj.AxesOil, 'Air temp [°C]', 'Color', [1 1 1]);
+            ylabel(obj.AxesOil, 'Oil temp [°C]', 'Color', [1 1 1]);
+            
+            % Set legend text color to white if legends exist
+            if ~isempty(obj.AxesWater.Legend)
+                obj.AxesWater.Legend.TextColor = [1 1 1];
+            end
+            if ~isempty(obj.AxesOil.Legend)
+                obj.AxesOil.Legend.TextColor = [1 1 1];
+            end
         end
         
         %% Callbacks
