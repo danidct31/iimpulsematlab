@@ -698,9 +698,6 @@ classdef RythmTab < handle
                     delete(styleObjs);
                     centerStyle = uistyle('HorizontalAlignment', 'center');
                     addStyle(obj.LapsTable1, centerStyle);
-                    
-                    % Highlight fastest sector times in red
-                    obj.highlightFastestSectors(obj.LapsTable1, T_display, [1 0 0]); % Red
                 else
                     obj.LapsTable2.Data = T_display;
                     obj.LapsTable2.ColumnName = colNames;
@@ -710,55 +707,6 @@ classdef RythmTab < handle
                     delete(styleObjs);
                     centerStyle = uistyle('HorizontalAlignment', 'center');
                     addStyle(obj.LapsTable2, centerStyle);
-                    
-                    % Highlight fastest sector times in light blue
-                    obj.highlightFastestSectors(obj.LapsTable2, T_display, [0.5 0.7 1]); % Light blue
-                end
-            end
-        end
-        
-        function highlightFastestSectors(obj, tableObj, tableData, highlightColor)
-            %HIGHLIGHTFASTESTSECTORS Highlight the fastest (lowest) value in each sector column
-            % Find sector column indices (sector_1, sector_2, sector_3, sector_4)
-            varNames = tableData.Properties.VariableNames;
-            sectorCols = {};
-            sectorIndices = [];
-            
-            for i = 1:length(varNames)
-                colName = varNames{i};
-                if contains(lower(colName), 'sector')
-                    sectorCols{end+1} = colName;
-                    sectorIndices(end+1) = i;
-                end
-            end
-            
-            if isempty(sectorCols)
-                return;
-            end
-            
-            % For each sector column, find the row with the minimum value
-            numRows = height(tableData);
-            for i = 1:length(sectorCols)
-                colName = sectorCols{i};
-                colIndex = sectorIndices(i);
-                
-                % Get column data
-                colData = tableData.(colName);
-                
-                % Convert to numeric if needed and filter out zeros (which were NaN replacements)
-                if isnumeric(colData)
-                    % Find minimum value (excluding zeros that were NaN replacements)
-                    validData = colData;
-                    validData(validData == 0) = NaN; % Treat zeros as invalid
-                    [minVal, minRow] = min(validData);
-                    
-                    % Only highlight if we found a valid minimum
-                    if ~isnan(minVal) && minRow > 0 && minRow <= numRows
-                        % Create highlight style
-                        highlightStyle = uistyle('BackgroundColor', highlightColor, 'HorizontalAlignment', 'center');
-                        % Apply to the cell at [minRow, colIndex]
-                        addStyle(tableObj, highlightStyle, 'cell', [minRow, colIndex]);
-                    end
                 end
             end
         end
