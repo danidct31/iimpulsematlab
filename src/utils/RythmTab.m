@@ -13,10 +13,17 @@ classdef RythmTab < handle
         Rider2DropDown
         ClearButton
         
+        % Laps tables
+        LapsTable1
+        LapsTable2
+        LapsTable1DropDown
+        LapsTable2DropDown
+        
         % Data
         CsvPath
         Data table
         TableData table
+        LapsData table
     end
     
     methods
@@ -44,15 +51,24 @@ classdef RythmTab < handle
                 % BackgroundColor may not be directly supported
             end
             
-            % Create main grid layout
-            mainGrid = uigridlayout(obj.Tab, [2 1]);
-            mainGrid.RowHeight = {'fit', '1x'};
-            mainGrid.ColumnWidth = {'1x'};
-            mainGrid.Padding = [10 10 10 10];
-            mainGrid.BackgroundColor = [0.3 0.3 0.3]; % Dark grey background
+            % Create nested tab group inside RythmTab
+            nestedTabGroup = uitabgroup(obj.Tab);
+            nestedTabGroup.Position = [1 1 1133 632];
+            
+            % Create first tab: Main Riders Table
+            ridersTab = uitab(nestedTabGroup);
+            ridersTab.Title = 'Riders';
+            ridersTab.BackgroundColor = [0.3 0.3 0.3];
+            
+            % Create grid for riders tab
+            ridersGrid = uigridlayout(ridersTab, [2 1]);
+            ridersGrid.RowHeight = {'fit', '1x'};
+            ridersGrid.ColumnWidth = {'1x'};
+            ridersGrid.Padding = [10 10 10 10];
+            ridersGrid.BackgroundColor = [0.3 0.3 0.3];
             
             % Create combo boxes panel
-            comboPanel = uipanel(mainGrid);
+            comboPanel = uipanel(ridersGrid);
             comboPanel.Layout.Row = 1;
             comboPanel.Layout.Column = 1;
             comboPanel.BackgroundColor = [0.3 0.3 0.3];
@@ -62,7 +78,7 @@ classdef RythmTab < handle
             comboGrid.Padding = [5 5 5 5];
             
             % First rider dropdown
-            uilabel(comboGrid, 'Text', 'Rider 1:', 'FontColor', [1 1 1]);
+            uilabel(comboGrid, 'Text', 'Rider 1:', 'FontColor', [0 0 0]);
             obj.Rider1DropDown = uidropdown(comboGrid, ...
                 'Items', {''}, ...
                 'Value', '', ...
@@ -70,7 +86,7 @@ classdef RythmTab < handle
             obj.Rider1DropDown.Layout.Column = 2;
             
             % Second rider dropdown
-            uilabel(comboGrid, 'Text', 'Rider 2:', 'FontColor', [1 1 1]);
+            uilabel(comboGrid, 'Text', 'Rider 2:', 'FontColor', [0 0 0]);
             obj.Rider2DropDown = uidropdown(comboGrid, ...
                 'Items', {''}, ...
                 'Value', '', ...
@@ -83,16 +99,16 @@ classdef RythmTab < handle
                 'ButtonPushedFcn', @(btn, event) obj.onClearButtonPushed());
             obj.ClearButton.Layout.Column = 5;
             
-            % Create scrollable panel for table
-            scrollPanel = uipanel(mainGrid);
+            % Create scrollable panel for main table
+            scrollPanel = uipanel(ridersGrid);
             scrollPanel.Layout.Row = 2;
             scrollPanel.Layout.Column = 1;
             scrollPanel.BackgroundColor = [0.3 0.3 0.3];
             scrollPanel.Scrollable = 'on';
             
-            % Create table directly in scrollable panel with absolute positioning
+            % Create table with fixed height for 28 rows
             obj.RidersTable = uitable(scrollPanel);
-            obj.RidersTable.Position = [10 10 1113 600];
+            obj.RidersTable.Position = [10 10 1113 700]; % Fixed height for 28 rows
             obj.RidersTable.ColumnEditable = false;
             obj.RidersTable.RowName = [];
             obj.RidersTable.ColumnWidth = 'auto';
@@ -100,6 +116,92 @@ classdef RythmTab < handle
             % Apply center alignment style to all cells
             centerStyle = uistyle('HorizontalAlignment', 'center');
             addStyle(obj.RidersTable, centerStyle);
+            
+            % Create second tab: Laps Tables
+            lapsTab = uitab(nestedTabGroup);
+            lapsTab.Title = 'Laps';
+            lapsTab.BackgroundColor = [0.3 0.3 0.3];
+            
+            % Create grid for laps tab
+            lapsGrid = uigridlayout(lapsTab, [2 1]);
+            lapsGrid.RowHeight = {'1x', '1x'};
+            lapsGrid.ColumnWidth = {'1x'};
+            lapsGrid.Padding = [10 10 10 10];
+            lapsGrid.BackgroundColor = [0.3 0.3 0.3];
+            obj.MainGrid = lapsGrid; % Store for createLapsTableSection
+            
+            % Create first laps table section
+            obj.createLapsTableSection(1, 1);
+            
+            % Create second laps table section
+            obj.createLapsTableSection(2, 2);
+        end
+        
+        function createLapsTableSection(obj, rowNum, tableNum)
+            %CREATELAPSTABLESECTION Create a laps table section with combo box
+            % Create panel for this table section
+            tablePanel = uipanel(obj.MainGrid);
+            tablePanel.Layout.Row = rowNum;
+            tablePanel.Layout.Column = 1;
+            tablePanel.BackgroundColor = [0.3 0.3 0.3];
+            
+            % Create grid for combo box and table
+            sectionGrid = uigridlayout(tablePanel, [2 1]);
+            sectionGrid.RowHeight = {'fit', '1x'};
+            sectionGrid.ColumnWidth = {'1x'};
+            sectionGrid.Padding = [5 5 5 5];
+            
+            % Combo box panel
+            comboPanel = uipanel(sectionGrid);
+            comboPanel.Layout.Row = 1;
+            comboPanel.Layout.Column = 1;
+            comboPanel.BackgroundColor = [0.3 0.3 0.3];
+            
+            comboGrid = uigridlayout(comboPanel, [1 2]);
+            comboGrid.ColumnWidth = {'fit', '1x'};
+            comboGrid.Padding = [5 5 5 5];
+            
+            % Label and dropdown
+            uilabel(comboGrid, 'Text', sprintf('Rider %d:', tableNum), 'FontColor', [0 0 0]);
+            if tableNum == 1
+                obj.LapsTable1DropDown = uidropdown(comboGrid, ...
+                    'Items', {''}, ...
+                    'Value', '', ...
+                    'ValueChangedFcn', @(dd, event) obj.onLapsTable1Changed());
+                obj.LapsTable1DropDown.Layout.Column = 2;
+            else
+                obj.LapsTable2DropDown = uidropdown(comboGrid, ...
+                    'Items', {''}, ...
+                    'Value', '', ...
+                    'ValueChangedFcn', @(dd, event) obj.onLapsTable2Changed());
+                obj.LapsTable2DropDown.Layout.Column = 2;
+            end
+            
+            % Table panel
+            tableScrollPanel = uipanel(sectionGrid);
+            tableScrollPanel.Layout.Row = 2;
+            tableScrollPanel.Layout.Column = 1;
+            tableScrollPanel.BackgroundColor = [0.3 0.3 0.3];
+            tableScrollPanel.Scrollable = 'on';
+            
+            % Create table
+            if tableNum == 1
+                obj.LapsTable1 = uitable(tableScrollPanel);
+                obj.LapsTable1.Position = [10 10 1113 200];
+                obj.LapsTable1.ColumnEditable = false;
+                obj.LapsTable1.RowName = [];
+                obj.LapsTable1.ColumnWidth = 'auto';
+                obj.LapsTable1.Data = {};
+                obj.LapsTable1.ColumnName = {};
+            else
+                obj.LapsTable2 = uitable(tableScrollPanel);
+                obj.LapsTable2.Position = [10 10 1113 200];
+                obj.LapsTable2.ColumnEditable = false;
+                obj.LapsTable2.RowName = [];
+                obj.LapsTable2.ColumnWidth = 'auto';
+                obj.LapsTable2.Data = {};
+                obj.LapsTable2.ColumnName = {};
+            end
         end
         
         function loadData(obj)
@@ -108,6 +210,15 @@ classdef RythmTab < handle
                 try
                     T = readtable(obj.CsvPath);
                     obj.Data = T;
+                    
+                    % Load laps CSV
+                    [csvDir, ~, ~] = fileparts(obj.CsvPath);
+                    lapsCsvPath = fullfile(csvDir, 'motogp_analysis_laps.csv');
+                    if isfile(lapsCsvPath)
+                        obj.LapsData = readtable(lapsCsvPath);
+                    else
+                        obj.LapsData = table();
+                    end
                     obj.updateTable();
                     obj.updateComboBoxes();
                 catch ME
@@ -329,6 +440,14 @@ classdef RythmTab < handle
             obj.Rider1DropDown.Items = riderNames;
             obj.Rider2DropDown.Items = riderNames;
             
+            % Update laps table combo boxes
+            if ~isempty(obj.LapsTable1DropDown)
+                obj.LapsTable1DropDown.Items = [{''}; riderNames];
+            end
+            if ~isempty(obj.LapsTable2DropDown)
+                obj.LapsTable2DropDown.Items = [{''}; riderNames];
+            end
+            
             % No pre-selected riders - start with empty selections
             obj.Rider1DropDown.Value = '';
             obj.Rider2DropDown.Value = '';
@@ -458,6 +577,136 @@ classdef RythmTab < handle
                         cellIndices = [repmat(rows2(r), numCols, 1), (1:numCols)'];
                         addStyle(obj.RidersTable, blueStyle, 'cell', cellIndices);
                     end
+                end
+            end
+        end
+        
+        function onLapsTable1Changed(obj)
+            %ONLAPSTABLE1CHANGED Handle laps table 1 rider selection change
+            selectedRider = obj.LapsTable1DropDown.Value;
+            obj.updateLapsTable(1, selectedRider);
+        end
+        
+        function onLapsTable2Changed(obj)
+            %ONLAPSTABLE2CHANGED Handle laps table 2 rider selection change
+            selectedRider = obj.LapsTable2DropDown.Value;
+            obj.updateLapsTable(2, selectedRider);
+        end
+        
+        function updateLapsTable(obj, tableNum, riderName)
+            %UPDATELAPSTABLE Update laps table with filtered data for selected rider
+            if isempty(obj.LapsData) || isempty(riderName) || isequal(riderName, '')
+                % Clear table if no rider selected or no data
+                if tableNum == 1
+                    obj.LapsTable1.Data = {};
+                    obj.LapsTable1.ColumnName = {};
+                else
+                    obj.LapsTable2.Data = {};
+                    obj.LapsTable2.ColumnName = {};
+                end
+                return;
+            end
+            
+            % Filter laps data by rider name
+            if ismember('rider_name', obj.LapsData.Properties.VariableNames)
+                mask = strcmp(obj.LapsData.rider_name, riderName);
+                filteredData = obj.LapsData(mask, :);
+            else
+                filteredData = table();
+            end
+            
+            if height(filteredData) == 0
+                % No data for this rider
+                if tableNum == 1
+                    obj.LapsTable1.Data = {};
+                    obj.LapsTable1.ColumnName = {};
+                else
+                    obj.LapsTable2.Data = {};
+                    obj.LapsTable2.ColumnName = {};
+                end
+                return;
+            end
+            
+            % Get column names from CSV (columns D, E, I, J, K, L, O)
+            varNames = filteredData.Properties.VariableNames;
+            
+            % Column D = lap_number (4th column, index 4)
+            % Column E = lap_time (5th column, index 5)
+            % Column I = sector_1 (9th column, index 9)
+            % Column J = sector_2 (10th column, index 10)
+            % Column K = sector_3 (11th column, index 11)
+            % Column L = sector_4 (12th column, index 12)
+            % Column O = speed (15th column, index 15)
+            
+            orderedCols = {};
+            colNames = {};
+            
+            if length(varNames) >= 4
+                orderedCols{end+1} = varNames{4}; % lap_number
+                colNames{end+1} = varNames{4};
+            end
+            if length(varNames) >= 5
+                orderedCols{end+1} = varNames{5}; % lap_time
+                colNames{end+1} = varNames{5};
+            end
+            if length(varNames) >= 9
+                orderedCols{end+1} = varNames{9}; % sector_1
+                colNames{end+1} = varNames{9};
+            end
+            if length(varNames) >= 10
+                orderedCols{end+1} = varNames{10}; % sector_2
+                colNames{end+1} = varNames{10};
+            end
+            if length(varNames) >= 11
+                orderedCols{end+1} = varNames{11}; % sector_3
+                colNames{end+1} = varNames{11};
+            end
+            if length(varNames) >= 12
+                orderedCols{end+1} = varNames{12}; % sector_4
+                colNames{end+1} = varNames{12};
+            end
+            if length(varNames) >= 15
+                orderedCols{end+1} = varNames{15}; % speed
+                colNames{end+1} = varNames{15};
+            end
+            
+            if ~isempty(orderedCols)
+                T_display = filteredData(:, orderedCols);
+                
+                % Replace NaN values with 0 for numeric columns
+                for i = 1:length(orderedCols)
+                    colName = orderedCols{i};
+                    if ismember(colName, T_display.Properties.VariableNames)
+                        colData = T_display.(colName);
+                        if isnumeric(colData)
+                            nanMask = isnan(colData);
+                            if any(nanMask)
+                                colData(nanMask) = 0;
+                                T_display.(colName) = colData;
+                            end
+                        end
+                    end
+                end
+                
+                % Update table
+                if tableNum == 1
+                    obj.LapsTable1.Data = T_display;
+                    obj.LapsTable1.ColumnName = colNames;
+                    
+                    % Apply center alignment
+                    styleObjs = findall(obj.LapsTable1, 'Type', 'uistyle');
+                    delete(styleObjs);
+                    centerStyle = uistyle('HorizontalAlignment', 'center');
+                    addStyle(obj.LapsTable1, centerStyle);
+                else
+                    obj.LapsTable2.Data = T_display;
+                    obj.LapsTable2.ColumnName = colNames;
+                    
+                    % Apply center alignment
+                    styleObjs = findall(obj.LapsTable2, 'Type', 'uistyle');
+                    delete(styleObjs);
+                    centerStyle = uistyle('HorizontalAlignment', 'center');
+                    addStyle(obj.LapsTable2, centerStyle);
                 end
             end
         end
