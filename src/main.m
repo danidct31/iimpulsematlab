@@ -64,11 +64,15 @@ classdef main < matlab.apps.AppBase
             consumptionPath = fullfile(dataDir, 'consumption.csv');
             app.ConsumptionTabComponent = ConsumptionTab(app.TabGroup, app.UIFigure, consumptionPath);
             
+            % Initialize Rythm tab
+            rawDataDir = fullfile(projectRoot, 'data', 'raw');
+            ridersCsvPath = fullfile(rawDataDir, 'motogp_analysis_riders.csv');
+            app.RythmTabComponent = RythmTab(app.TabGroup, app.UIFigure, ridersCsvPath);
+            
             % Initialize empty placeholder tabs
             app.TyresTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Tyres');
             app.FuelInjectionTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Fuel Injection');
             app.EngineBrakeTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Engine Brake');
-            app.RythmTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Rythm');
             app.FileShareTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'File Share');
             app.HondaSheetsTabComponent = EmptyTab(app.TabGroup, app.UIFigure, 'Honda Sheets');
         end
