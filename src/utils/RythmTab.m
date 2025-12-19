@@ -19,11 +19,15 @@ classdef RythmTab < handle
         LapsTable1DropDown
         LapsTable2DropDown
         
+        % Sectors table
+        SectorsTable
+        
         % Data
         CsvPath
         Data table
         TableData table
         LapsData table
+        SectorsData table
     end
     
     methods
@@ -135,6 +139,30 @@ classdef RythmTab < handle
             
             % Create second laps table section
             obj.createLapsTableSection(2, 2);
+            
+            % Create third tab: Sectors Table
+            sectorsTab = uitab(nestedTabGroup);
+            sectorsTab.Title = 'Sectors';
+            sectorsTab.BackgroundColor = [0.3 0.3 0.3];
+            
+            % Create scrollable panel for sectors table
+            sectorsScrollPanel = uipanel(sectorsTab);
+            sectorsScrollPanel.Position = [1 1 1133 632];
+            sectorsScrollPanel.BackgroundColor = [0.3 0.3 0.3];
+            sectorsScrollPanel.Scrollable = 'on';
+            
+            % Create sectors table
+            obj.SectorsTable = uitable(sectorsScrollPanel);
+            obj.SectorsTable.Position = [10 10 1113 700];
+            obj.SectorsTable.ColumnEditable = false;
+            obj.SectorsTable.RowName = [];
+            obj.SectorsTable.ColumnWidth = 'auto';
+            obj.SectorsTable.Data = {};
+            obj.SectorsTable.ColumnName = {};
+            
+            % Apply center alignment style to all cells
+            centerStyle = uistyle('HorizontalAlignment', 'center');
+            addStyle(obj.SectorsTable, centerStyle);
         end
         
         function createLapsTableSection(obj, rowNum, tableNum)
@@ -219,8 +247,18 @@ classdef RythmTab < handle
                     else
                         obj.LapsData = table();
                     end
+                    
+                    % Load sectors CSV
+                    sectorsCsvPath = fullfile(csvDir, 'motogp_analysis_sectors.csv');
+                    if isfile(sectorsCsvPath)
+                        obj.SectorsData = readtable(sectorsCsvPath);
+                    else
+                        obj.SectorsData = table();
+                    end
+                    
                     obj.updateTable();
                     obj.updateComboBoxes();
+                    obj.updateSectorsTable();
                 catch ME
                     warning('RythmTab:ReadError', ...
                         'Error reading %s: %s', obj.CsvPath, ME.message);
@@ -493,11 +531,14 @@ classdef RythmTab < handle
         end
         
         function onClearButtonPushed(obj)
-            %ONCLEARBUTTONPUSHED Clear all highlights and restore original row colors
-            % Does NOT clear the combo box selections, only removes highlights
+            %ONCLEARBUTTONPUSHED Clear all highlights, restore original row colors, and reset combo boxes
             if isempty(obj.TableData)
                 return;
             end
+            
+            % Reset combo boxes to empty (no rider selected)
+            obj.Rider1DropDown.Value = '';
+            obj.Rider2DropDown.Value = '';
             
             % Delete all style objects first
             styleObjs = findall(obj.RidersTable, 'Type', 'uistyle');
@@ -690,26 +731,28 @@ classdef RythmTab < handle
                 
                 % Update table
                 if tableNum == 1
+                    % First, clear all existing styles
+                    obj.clearAllTableStyles(obj.LapsTable1);
+                    
+                    % Set the new data
                     obj.LapsTable1.Data = T_display;
                     obj.LapsTable1.ColumnName = colNames;
                     
-                    % Apply center alignment
-                    styleObjs = findall(obj.LapsTable1, 'Type', 'uistyle');
-                    delete(styleObjs);
-                    centerStyle = uistyle('HorizontalAlignment', 'center');
-                    addStyle(obj.LapsTable1, centerStyle);
+                    % Reset all cells to default white background with center alignment
+                    obj.resetTableBackgrounds(obj.LapsTable1, T_display);
                     
                     % Highlight fastest sector times in red
                     obj.highlightFastestSectors(obj.LapsTable1, T_display, [1 0 0]); % Red
                 else
+                    % First, clear all existing styles
+                    obj.clearAllTableStyles(obj.LapsTable2);
+                    
+                    % Set the new data
                     obj.LapsTable2.Data = T_display;
                     obj.LapsTable2.ColumnName = colNames;
                     
-                    % Apply center alignment
-                    styleObjs = findall(obj.LapsTable2, 'Type', 'uistyle');
-                    delete(styleObjs);
-                    centerStyle = uistyle('HorizontalAlignment', 'center');
-                    addStyle(obj.LapsTable2, centerStyle);
+                    % Reset all cells to default white background with center alignment
+                    obj.resetTableBackgrounds(obj.LapsTable2, T_display);
                     
                     % Highlight fastest sector times in light blue
                     obj.highlightFastestSectors(obj.LapsTable2, T_display, [0.5 0.7 1]); % Light blue
@@ -719,6 +762,7 @@ classdef RythmTab < handle
         
         function highlightFastestSectors(obj, tableObj, tableData, highlightColor)
             %HIGHLIGHTFASTESTSECTORS Highlight the fastest (lowest) value in each sector column
+            % Ignores first row when finding fastest sectors
             % Find sector column indices (sector_1, sector_2, sector_3, sector_4)
             varNames = tableData.Properties.VariableNames;
             sectorCols = {};
@@ -738,6 +782,12 @@ classdef RythmTab < handle
             
             % For each sector column, find the row with the minimum value
             numRows = height(tableData);
+            
+            % Only process if we have more than 1 row (need rows beyond first to highlight)
+            if numRows <= 1
+                return;
+            end
+            
             for i = 1:length(sectorCols)
                 colName = sectorCols{i};
                 colIndex = sectorIndices(i);
@@ -747,19 +797,300 @@ classdef RythmTab < handle
                 
                 % Convert to numeric if needed and filter out zeros (which were NaN replacements)
                 if isnumeric(colData)
-                    % Find minimum value (excluding zeros that were NaN replacements)
+                    % Create a copy for finding minimum, excluding first row only
                     validData = colData;
                     validData(validData == 0) = NaN; % Treat zeros as invalid
-                    [minVal, minRow] = min(validData);
                     
-                    % Only highlight if we found a valid minimum
-                    if ~isnan(minVal) && minRow > 0 && minRow <= numRows
+                    % Exclude first row (index 1) only
+                    validDataForMin = validData;
+                    validDataForMin(1) = NaN; % Ignore first row
+                    
+                    % Find minimum value (excluding first row and zeros/NaN)
+                    [minVal, minRow] = min(validDataForMin);
+                    
+                    % Only highlight if we found a valid minimum and it's not the first row
+                    if ~isnan(minVal) && minRow > 1
                         % Create highlight style
                         highlightStyle = uistyle('BackgroundColor', highlightColor, 'HorizontalAlignment', 'center');
                         % Apply to the cell at [minRow, colIndex]
                         addStyle(tableObj, highlightStyle, 'cell', [minRow, colIndex]);
                     end
                 end
+            end
+        end
+        
+        function updateSectorsTable(obj)
+            %UPDATESECTORSTABLE Update sectors table with sorted rider positions per sector
+            try
+                if isempty(obj.SectorsData) || ~isa(obj.SectorsData, 'table')
+                    % Set empty table with column headers
+                    obj.SectorsTable.Data = cell(0, 8);
+                    obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+                                                   'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
+                                                   'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
+                                                   'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
+                    return;
+                end
+                
+                % Check if required columns exist
+                varNames = obj.SectorsData.Properties.VariableNames;
+                if ~ismember('sector_number', varNames) || ...
+                   ~ismember('rider_name', varNames) || ...
+                   ~ismember('sector_time', varNames)
+                    % Set empty table with column headers
+                    obj.SectorsTable.Data = cell(0, 8);
+                    obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+                                                   'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
+                                                   'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
+                                                   'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
+                    return;
+                end
+                
+                % Process each sector (1-4)
+            allSectorResults = cell(4, 1); % Store results for each sector
+            
+            for sectorNum = 1:4
+                % Filter data for this sector
+                % Handle both numeric and string sector_number values
+                sectorNumberData = obj.SectorsData.sector_number;
+                if isnumeric(sectorNumberData)
+                    sectorMask = sectorNumberData == sectorNum;
+                elseif iscell(sectorNumberData) || isstring(sectorNumberData) || ischar(sectorNumberData)
+                    sectorMask = strcmp(string(sectorNumberData), string(sectorNum));
+                else
+                    sectorMask = double(sectorNumberData) == sectorNum;
+                end
+                sectorData = obj.SectorsData(sectorMask, :);
+                
+                if height(sectorData) == 0
+                    % No data for this sector
+                    allSectorResults{sectorNum} = table('Size', [0, 2], ...
+                        'VariableTypes', {'string', 'double'}, ...
+                        'VariableNames', {'RiderName', 'BestTime'});
+                    continue;
+                end
+                
+                % Get unique riders - convert to string for consistent handling
+                riderNamesRaw = sectorData.rider_name;
+                if iscell(riderNamesRaw)
+                    riderNamesRaw = string(riderNamesRaw);
+                end
+                riderNamesRaw = string(riderNamesRaw); % Ensure string array
+                uniqueRiders = unique(riderNamesRaw, 'stable');
+                
+                % For each rider, find their best (minimum) sector time
+                riderNames = {};
+                bestTimes = [];
+                
+                for i = 1:length(uniqueRiders)
+                    rider = string(uniqueRiders(i));
+                    % Compare rider names using string comparison
+                    riderMask = strcmp(riderNamesRaw, rider);
+                    riderSectorTimes = sectorData.sector_time(riderMask);
+                    
+                    % Find minimum (best) time, ignoring NaN and invalid values
+                    % Convert to numeric if needed
+                    if isnumeric(riderSectorTimes)
+                        validTimes = riderSectorTimes(~isnan(riderSectorTimes) & riderSectorTimes > 0);
+                    else
+                        riderSectorTimes = double(riderSectorTimes);
+                        validTimes = riderSectorTimes(~isnan(riderSectorTimes) & riderSectorTimes > 0);
+                    end
+                    if ~isempty(validTimes)
+                        bestTime = min(validTimes);
+                        riderNames{end+1} = string(rider);
+                        bestTimes(end+1) = bestTime;
+                    end
+                end
+                
+                % Sort by best time (ascending - fastest first)
+                if ~isempty(bestTimes)
+                    [sortedTimes, sortIdx] = sort(bestTimes);
+                    sortedRiderNames = riderNames(sortIdx);
+                    
+                    % Create table for this sector
+                    sectorTable = table(sortedRiderNames', sortedTimes', ...
+                        'VariableNames', {'RiderName', 'BestTime'});
+                    allSectorResults{sectorNum} = sectorTable;
+                else
+                    allSectorResults{sectorNum} = table('Size', [0, 2], ...
+                        'VariableTypes', {'string', 'double'}, ...
+                        'VariableNames', {'RiderName', 'BestTime'});
+                end
+            end
+            
+            % Combine all sectors into one table with 8 columns
+            % Find the maximum number of rows across all sectors
+            maxRows = 0;
+            for i = 1:4
+                maxRows = max(maxRows, height(allSectorResults{i}));
+            end
+            
+            if maxRows == 0
+                % No data, but show column headers
+                obj.SectorsTable.Data = cell(0, 8);
+                obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+                                               'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
+                                               'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
+                                               'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
+                return;
+            end
+            
+            % Create the combined table using a table object (similar to LapsTable)
+            % Initialize columns as string arrays for names and numeric arrays for times
+            sector1Names = strings(maxRows, 1);
+            sector1Times = NaN(maxRows, 1);
+            sector2Names = strings(maxRows, 1);
+            sector2Times = NaN(maxRows, 1);
+            sector3Names = strings(maxRows, 1);
+            sector3Times = NaN(maxRows, 1);
+            sector4Names = strings(maxRows, 1);
+            sector4Times = NaN(maxRows, 1);
+            
+            for sectorNum = 1:4
+                sectorTable = allSectorResults{sectorNum};
+                numRowsInSector = height(sectorTable);
+                
+                % Fill rider names and times directly based on sector number
+                % Convert rider names to strings
+                if sectorNum == 1
+                    % Fill rider names - convert to strings
+                    if numRowsInSector > 0
+                        for r = 1:numRowsInSector
+                            riderNameVal = sectorTable.RiderName(r);
+                            sector1Names(r) = string(riderNameVal);
+                        end
+                    end
+                    % Fill remaining rows with empty strings
+                    for r = (numRowsInSector + 1):maxRows
+                        sector1Names(r) = "";
+                    end
+                    % Fill lap times
+                    if numRowsInSector > 0
+                        for r = 1:numRowsInSector
+                            sector1Times(r) = double(sectorTable.BestTime(r));
+                        end
+                    end
+                elseif sectorNum == 2
+                    if numRowsInSector > 0
+                        for r = 1:numRowsInSector
+                            riderNameVal = sectorTable.RiderName(r);
+                            sector2Names(r) = string(riderNameVal);
+                        end
+                    end
+                    for r = (numRowsInSector + 1):maxRows
+                        sector2Names(r) = "";
+                    end
+                    if numRowsInSector > 0
+                        for r = 1:numRowsInSector
+                            sector2Times(r) = double(sectorTable.BestTime(r));
+                        end
+                    end
+                elseif sectorNum == 3
+                    if numRowsInSector > 0
+                        for r = 1:numRowsInSector
+                            riderNameVal = sectorTable.RiderName(r);
+                            sector3Names(r) = string(riderNameVal);
+                        end
+                    end
+                    for r = (numRowsInSector + 1):maxRows
+                        sector3Names(r) = "";
+                    end
+                    if numRowsInSector > 0
+                        for r = 1:numRowsInSector
+                            sector3Times(r) = double(sectorTable.BestTime(r));
+                        end
+                    end
+                else % sectorNum == 4
+                    if numRowsInSector > 0
+                        for r = 1:numRowsInSector
+                            riderNameVal = sectorTable.RiderName(r);
+                            sector4Names(r) = string(riderNameVal);
+                        end
+                    end
+                    for r = (numRowsInSector + 1):maxRows
+                        sector4Names(r) = "";
+                    end
+                    if numRowsInSector > 0
+                        for r = 1:numRowsInSector
+                            sector4Times(r) = double(sectorTable.BestTime(r));
+                        end
+                    end
+                end
+            end
+            
+            % Create table object
+            combinedTable = table(sector1Names, sector1Times, ...
+                                  sector2Names, sector2Times, ...
+                                  sector3Names, sector3Times, ...
+                                  sector4Names, sector4Times);
+            
+            % Update the table
+            obj.SectorsTable.Data = combinedTable;
+            obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+                                           'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
+                                           'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
+                                           'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
+            
+            % Force table refresh
+            drawnow;
+            
+                % Apply center alignment (if not already applied)
+                styleObjs = findall(obj.SectorsTable, 'Type', 'uistyle');
+                if isempty(styleObjs)
+                    centerStyle = uistyle('HorizontalAlignment', 'center');
+                    addStyle(obj.SectorsTable, centerStyle);
+                end
+            catch ME
+                warning('RythmTab:UpdateSectorsTableError', ...
+                    'Error updating sectors table: %s', ME.message);
+                % Set empty table with column headers on error
+                obj.SectorsTable.Data = cell(0, 8);
+                obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+                                               'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
+                                               'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
+                                               'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
+            end
+        end
+        
+        function clearAllTableStyles(obj, tableObj)
+            %CLEARALLTABLESTYLES Remove all styles from a table
+            % Get all existing styles
+            styleObjs = findall(tableObj, 'Type', 'uistyle');
+            % Remove each style
+            for i = 1:length(styleObjs)
+                try
+                    removeStyle(tableObj, styleObjs(i));
+                catch
+                    % If removeStyle fails, try delete
+                    try
+                        delete(styleObjs(i));
+                    catch
+                        % Ignore if both fail
+                    end
+                end
+            end
+        end
+        
+        function resetTableBackgrounds(obj, tableObj, tableData)
+            %RESETTABLEBACKGROUNDS Reset all cells to default white background with center alignment
+            % Get table dimensions from the data
+            numRows = height(tableData);
+            numCols = width(tableData);
+            
+            if numRows > 0 && numCols > 0
+                % Create a default style with white background and center alignment
+                defaultStyle = uistyle('BackgroundColor', [1 1 1], 'HorizontalAlignment', 'center');
+                % Apply to all cells
+                allCells = zeros(numRows * numCols, 2);
+                idx = 1;
+                for r = 1:numRows
+                    for c = 1:numCols
+                        allCells(idx, :) = [r, c];
+                        idx = idx + 1;
+                    end
+                end
+                addStyle(tableObj, defaultStyle, 'cell', allCells);
             end
         end
     end
