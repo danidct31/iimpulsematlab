@@ -126,19 +126,19 @@ classdef RythmTab < handle
             lapsTab.Title = 'Laps';
             lapsTab.BackgroundColor = [0.3 0.3 0.3];
             
-            % Create grid for laps tab
-            lapsGrid = uigridlayout(lapsTab, [2 1]);
-            lapsGrid.RowHeight = {'1x', '1x'};
-            lapsGrid.ColumnWidth = {'1x'};
+            % Create grid for laps tab (1 row, 2 columns for side-by-side layout)
+            lapsGrid = uigridlayout(lapsTab, [1 2]);
+            lapsGrid.RowHeight = {'1x'};
+            lapsGrid.ColumnWidth = {'1x', '1x'};
             lapsGrid.Padding = [10 10 10 10];
             lapsGrid.BackgroundColor = [0.3 0.3 0.3];
             obj.MainGrid = lapsGrid; % Store for createLapsTableSection
             
-            % Create first laps table section
-            obj.createLapsTableSection(1, 1);
+            % Create first laps table section (left column)
+            obj.createLapsTableSection(1, 1, 1);
             
-            % Create second laps table section
-            obj.createLapsTableSection(2, 2);
+            % Create second laps table section (right column)
+            obj.createLapsTableSection(1, 2, 2);
             
             % Create third tab: Sectors Table
             sectorsTab = uitab(nestedTabGroup);
@@ -159,18 +159,22 @@ classdef RythmTab < handle
             obj.SectorsTable.ColumnWidth = 'auto';
             obj.SectorsTable.Data = {};
             obj.SectorsTable.ColumnName = {};
+            % Remove ColumnFormat if it exists to avoid warnings with table Data
+            if isprop(obj.SectorsTable, 'ColumnFormat')
+                obj.SectorsTable.ColumnFormat = {};
+            end
             
             % Apply center alignment style to all cells
             centerStyle = uistyle('HorizontalAlignment', 'center');
             addStyle(obj.SectorsTable, centerStyle);
         end
         
-        function createLapsTableSection(obj, rowNum, tableNum)
+        function createLapsTableSection(obj, rowNum, colNum, tableNum)
             %CREATELAPSTABLESECTION Create a laps table section with combo box
             % Create panel for this table section
             tablePanel = uipanel(obj.MainGrid);
             tablePanel.Layout.Row = rowNum;
-            tablePanel.Layout.Column = 1;
+            tablePanel.Layout.Column = colNum;
             tablePanel.BackgroundColor = [0.3 0.3 0.3];
             
             % Create grid for combo box and table
@@ -215,18 +219,18 @@ classdef RythmTab < handle
             % Create table
             if tableNum == 1
                 obj.LapsTable1 = uitable(tableScrollPanel);
-                obj.LapsTable1.Position = [10 10 1113 200];
+                obj.LapsTable1.Position = [10 10 500 200];
                 obj.LapsTable1.ColumnEditable = false;
                 obj.LapsTable1.RowName = [];
-                obj.LapsTable1.ColumnWidth = 'auto';
+                obj.LapsTable1.ColumnWidth = 'auto'; % Will be set dynamically when data loads
                 obj.LapsTable1.Data = {};
                 obj.LapsTable1.ColumnName = {};
             else
                 obj.LapsTable2 = uitable(tableScrollPanel);
-                obj.LapsTable2.Position = [10 10 1113 200];
+                obj.LapsTable2.Position = [10 10 500 200];
                 obj.LapsTable2.ColumnEditable = false;
                 obj.LapsTable2.RowName = [];
-                obj.LapsTable2.ColumnWidth = 'auto';
+                obj.LapsTable2.ColumnWidth = 'auto'; % Will be set dynamically when data loads
                 obj.LapsTable2.Data = {};
                 obj.LapsTable2.ColumnName = {};
             end
@@ -735,8 +739,15 @@ classdef RythmTab < handle
                     obj.clearAllTableStyles(obj.LapsTable1);
                     
                     % Set the new data
+                    % Clear ColumnFormat to avoid warnings when using table Data
+                    if isprop(obj.LapsTable1, 'ColumnFormat')
+                        obj.LapsTable1.ColumnFormat = {};
+                    end
                     obj.LapsTable1.Data = T_display;
                     obj.LapsTable1.ColumnName = colNames;
+                    
+                    % Set column widths to fill the table width
+                    obj.fitColumnsToTableWidth(obj.LapsTable1);
                     
                     % Reset all cells to default white background with center alignment
                     obj.resetTableBackgrounds(obj.LapsTable1, T_display);
@@ -748,8 +759,15 @@ classdef RythmTab < handle
                     obj.clearAllTableStyles(obj.LapsTable2);
                     
                     % Set the new data
+                    % Clear ColumnFormat to avoid warnings when using table Data
+                    if isprop(obj.LapsTable2, 'ColumnFormat')
+                        obj.LapsTable2.ColumnFormat = {};
+                    end
                     obj.LapsTable2.Data = T_display;
                     obj.LapsTable2.ColumnName = colNames;
+                    
+                    % Set column widths to fill the table width
+                    obj.fitColumnsToTableWidth(obj.LapsTable2);
                     
                     % Reset all cells to default white background with center alignment
                     obj.resetTableBackgrounds(obj.LapsTable2, T_display);
@@ -757,6 +775,38 @@ classdef RythmTab < handle
                     % Highlight fastest sector times in light blue
                     obj.highlightFastestSectors(obj.LapsTable2, T_display, [0.5 0.7 1]); % Light blue
                 end
+            end
+        end
+        
+        function fitColumnsToTableWidth(obj, tableObj)
+            %FITCOLUMNSTOTABLEWIDTH Calculate column widths to fill the table width
+            % Get the table's parent panel to determine available width
+            try
+                parentPanel = tableObj.Parent;
+                if isvalid(parentPanel)
+                    % Get panel width (accounting for padding/margins)
+                    panelWidth = parentPanel.Position(3);
+                    availableWidth = panelWidth - 30; % Account for margins/padding
+                    
+                    % Get number of columns from the table data
+                    numCols = 0;
+                    if istable(tableObj.Data) && width(tableObj.Data) > 0
+                        numCols = width(tableObj.Data);
+                    elseif ~isempty(tableObj.ColumnName) && length(tableObj.ColumnName) > 0
+                        numCols = length(tableObj.ColumnName);
+                    end
+                    
+                    if numCols > 0
+                        % Calculate equal width for each column to fill the available width
+                        colWidth = max(60, floor(availableWidth / numCols)); % Minimum 60 pixels per column
+                        columnWidths = repmat({colWidth}, 1, numCols);
+                        tableObj.ColumnWidth = columnWidths;
+                    end
+                end
+            catch ME
+                % If calculation fails, use 'fit' as fallback
+                warning('RythmTab:ColumnWidthError', 'Could not calculate column widths: %s', ME.message);
+                tableObj.ColumnWidth = 'fit';
             end
         end
         
@@ -1026,6 +1076,10 @@ classdef RythmTab < handle
                                   sector4Names, sector4Times);
             
             % Update the table
+            % Clear ColumnFormat to avoid warnings when using table Data
+            if isprop(obj.SectorsTable, 'ColumnFormat')
+                obj.SectorsTable.ColumnFormat = {};
+            end
             obj.SectorsTable.Data = combinedTable;
             obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
                                            'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...

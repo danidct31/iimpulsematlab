@@ -219,18 +219,18 @@ classdef RythmTab < handle
             % Create table
             if tableNum == 1
                 obj.LapsTable1 = uitable(tableScrollPanel);
-                obj.LapsTable1.Position = [10 10 500 200];
+                obj.LapsTable1.Position = [10 10 1113 200];
                 obj.LapsTable1.ColumnEditable = false;
                 obj.LapsTable1.RowName = [];
-                obj.LapsTable1.ColumnWidth = 'auto'; % Will be set dynamically when data loads
+                obj.LapsTable1.ColumnWidth = 'auto';
                 obj.LapsTable1.Data = {};
                 obj.LapsTable1.ColumnName = {};
             else
                 obj.LapsTable2 = uitable(tableScrollPanel);
-                obj.LapsTable2.Position = [10 10 500 200];
+                obj.LapsTable2.Position = [10 10 1113 200];
                 obj.LapsTable2.ColumnEditable = false;
                 obj.LapsTable2.RowName = [];
-                obj.LapsTable2.ColumnWidth = 'auto'; % Will be set dynamically when data loads
+                obj.LapsTable2.ColumnWidth = 'auto';
                 obj.LapsTable2.Data = {};
                 obj.LapsTable2.ColumnName = {};
             end
@@ -746,9 +746,6 @@ classdef RythmTab < handle
                     obj.LapsTable1.Data = T_display;
                     obj.LapsTable1.ColumnName = colNames;
                     
-                    % Set column widths to fill the table width
-                    obj.fitColumnsToTableWidth(obj.LapsTable1);
-                    
                     % Reset all cells to default white background with center alignment
                     obj.resetTableBackgrounds(obj.LapsTable1, T_display);
                     
@@ -766,47 +763,12 @@ classdef RythmTab < handle
                     obj.LapsTable2.Data = T_display;
                     obj.LapsTable2.ColumnName = colNames;
                     
-                    % Set column widths to fill the table width
-                    obj.fitColumnsToTableWidth(obj.LapsTable2);
-                    
                     % Reset all cells to default white background with center alignment
                     obj.resetTableBackgrounds(obj.LapsTable2, T_display);
                     
                     % Highlight fastest sector times in light blue
                     obj.highlightFastestSectors(obj.LapsTable2, T_display, [0.5 0.7 1]); % Light blue
                 end
-            end
-        end
-        
-        function fitColumnsToTableWidth(obj, tableObj)
-            %FITCOLUMNSTOTABLEWIDTH Calculate column widths to fill the table width
-            % Get the table's parent panel to determine available width
-            try
-                parentPanel = tableObj.Parent;
-                if isvalid(parentPanel)
-                    % Get panel width (accounting for padding/margins)
-                    panelWidth = parentPanel.Position(3);
-                    availableWidth = panelWidth - 30; % Account for margins/padding
-                    
-                    % Get number of columns from the table data
-                    numCols = 0;
-                    if istable(tableObj.Data) && width(tableObj.Data) > 0
-                        numCols = width(tableObj.Data);
-                    elseif ~isempty(tableObj.ColumnName) && length(tableObj.ColumnName) > 0
-                        numCols = length(tableObj.ColumnName);
-                    end
-                    
-                    if numCols > 0
-                        % Calculate equal width for each column to fill the available width
-                        colWidth = max(60, floor(availableWidth / numCols)); % Minimum 60 pixels per column
-                        columnWidths = repmat({colWidth}, 1, numCols);
-                        tableObj.ColumnWidth = columnWidths;
-                    end
-                end
-            catch ME
-                % If calculation fails, use 'fit' as fallback
-                warning('RythmTab:ColumnWidthError', 'Could not calculate column widths: %s', ME.message);
-                tableObj.ColumnWidth = 'fit';
             end
         end
         
