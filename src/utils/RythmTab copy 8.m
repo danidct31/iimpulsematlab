@@ -25,9 +25,14 @@ classdef RythmTab < handle
         
         % Sectors table
         SectorsTable
+        SectorsSummaryTable
         Sector1DropDown
         Sector2DropDown
         SectorsClearButton
+        
+        % Speeds table
+        SpeedsTable
+        SpeedsAxes               % Axes for speeds graph
         
         % Data
         CsvPath
@@ -153,16 +158,16 @@ classdef RythmTab < handle
             sectorsTab.BackgroundColor = [0.3 0.3 0.3];
             
             % Create grid for sectors tab
-            sectorsGrid = uigridlayout(sectorsTab, [2 1]);
+            sectorsGrid = uigridlayout(sectorsTab, [2 2]);
             sectorsGrid.RowHeight = {'fit', '1x'};
-            sectorsGrid.ColumnWidth = {'1x'};
+            sectorsGrid.ColumnWidth = {'2x', '1x'};
             sectorsGrid.Padding = [10 10 10 10];
             sectorsGrid.BackgroundColor = [0.3 0.3 0.3];
             
-            % Create combo boxes panel
+            % Create combo boxes panel (spanning both columns)
             sectorsComboPanel = uipanel(sectorsGrid);
             sectorsComboPanel.Layout.Row = 1;
-            sectorsComboPanel.Layout.Column = 1;
+            sectorsComboPanel.Layout.Column = [1 2];
             sectorsComboPanel.BackgroundColor = [0.3 0.3 0.3];
             
             sectorsComboGrid = uigridlayout(sectorsComboPanel, [1 5]);
@@ -191,7 +196,7 @@ classdef RythmTab < handle
                 'ButtonPushedFcn', @(btn, event) obj.onSectorsClearButtonPushed());
             obj.SectorsClearButton.Layout.Column = 5;
             
-            % Create table directly in grid (no scrollable panel)
+            % Create main sectors table (left, 2/3 width)
             obj.SectorsTable = uitable(sectorsGrid);
             obj.SectorsTable.Layout.Row = 2;
             obj.SectorsTable.Layout.Column = 1;
@@ -208,6 +213,66 @@ classdef RythmTab < handle
             % Apply center alignment style to all cells
             centerStyle = uistyle('HorizontalAlignment', 'center');
             addStyle(obj.SectorsTable, centerStyle);
+            
+            % Create summary table (right, 1/3 width)
+            obj.SectorsSummaryTable = uitable(sectorsGrid);
+            obj.SectorsSummaryTable.Layout.Row = 2;
+            obj.SectorsSummaryTable.Layout.Column = 2;
+            obj.SectorsSummaryTable.ColumnEditable = false;
+            obj.SectorsSummaryTable.RowName = [];
+            obj.SectorsSummaryTable.ColumnWidth = 'auto';
+            obj.SectorsSummaryTable.Data = {};
+            obj.SectorsSummaryTable.ColumnName = {'Rider_Name', 'Position', 'Ideal_Laptime', 'Best_Laptime'};
+            % Remove ColumnFormat if it exists to avoid warnings with table Data
+            if isprop(obj.SectorsSummaryTable, 'ColumnFormat')
+                obj.SectorsSummaryTable.ColumnFormat = {};
+            end
+            
+            % Apply center alignment style to summary table
+            centerStyleSummary = uistyle('HorizontalAlignment', 'center');
+            addStyle(obj.SectorsSummaryTable, centerStyleSummary);
+            
+            % Create fourth tab: Speeds Table
+            speedsTab = uitab(nestedTabGroup);
+            speedsTab.Title = 'Speeds';
+            speedsTab.BackgroundColor = [0.3 0.3 0.3];
+            
+            % Create grid for speeds tab (table on left, graph on right)
+            speedsGrid = uigridlayout(speedsTab, [1 2]);
+            speedsGrid.RowHeight = {'1x'};
+            speedsGrid.ColumnWidth = {'2x', '1x'};
+            speedsGrid.Padding = [10 10 10 10];
+            speedsGrid.BackgroundColor = [0.3 0.3 0.3];
+            
+            % Create speeds table
+            obj.SpeedsTable = uitable(speedsGrid);
+            obj.SpeedsTable.Layout.Row = 1;
+            obj.SpeedsTable.Layout.Column = 1;
+            obj.SpeedsTable.ColumnEditable = false;
+            obj.SpeedsTable.RowName = [];
+            obj.SpeedsTable.ColumnWidth = 'auto';
+            obj.SpeedsTable.Data = {};
+            obj.SpeedsTable.ColumnName = {};
+            % Remove ColumnFormat if it exists to avoid warnings with table Data
+            if isprop(obj.SpeedsTable, 'ColumnFormat')
+                obj.SpeedsTable.ColumnFormat = {};
+            end
+            
+            % Apply center alignment style to all cells
+            centerStyleSpeeds = uistyle('HorizontalAlignment', 'center');
+            addStyle(obj.SpeedsTable, centerStyleSpeeds);
+            
+            % Create axes for speeds graph
+            obj.SpeedsAxes = uiaxes(speedsGrid);
+            obj.SpeedsAxes.Layout.Row = 1;
+            obj.SpeedsAxes.Layout.Column = 2;
+            obj.SpeedsAxes.BackgroundColor = [1 1 1];
+            obj.SpeedsAxes.XColor = [1 1 1];
+            obj.SpeedsAxes.YColor = [1 1 1];
+            obj.SpeedsAxes.Color = [0.3 0.3 0.3];
+            obj.SpeedsAxes.GridColor = [0.5 0.5 0.5];
+            obj.SpeedsAxes.XGrid = 'on';
+            obj.SpeedsAxes.YGrid = 'on';
         end
         
         function createLapsTableSection(obj, rowNum, colNum, tableNum)
@@ -335,6 +400,7 @@ classdef RythmTab < handle
                     obj.updateTable();
                     obj.updateComboBoxes();
                     obj.updateSectorsTable();
+                    obj.updateSpeedsTable();
                     
                     % No longer need to scroll - table is directly in grid layout (no scrollable panel)
                 catch ME
@@ -603,14 +669,18 @@ classdef RythmTab < handle
             % updateLapsTable already calls fitColumnsToTableWidth, but panel size might not be ready yet
             % Use multiple timer attempts to ensure it works
             if length(riderNames) >= 1
-                % First attempt after 0.2 seconds
-                t1 = timer('StartDelay', 0.2, 'ExecutionMode', 'singleShot', ...
+                % First attempt after 0.1 seconds
+                t1 = timer('StartDelay', 0.1, 'ExecutionMode', 'singleShot', ...
                     'TimerFcn', @(~,~) obj.ensureLapsTableColumnWidths());
                 start(t1);
-                % Second attempt after 0.5 seconds as backup
-                t2 = timer('StartDelay', 0.5, 'ExecutionMode', 'singleShot', ...
+                % Second attempt after 0.3 seconds
+                t2 = timer('StartDelay', 0.3, 'ExecutionMode', 'singleShot', ...
                     'TimerFcn', @(~,~) obj.ensureLapsTableColumnWidths());
                 start(t2);
+                % Third attempt after 0.8 seconds as backup
+                t3 = timer('StartDelay', 0.8, 'ExecutionMode', 'singleShot', ...
+                    'TimerFcn', @(~,~) obj.ensureLapsTableColumnWidths());
+                start(t3);
             end
             
             % Pre-select first rider for Rider1DropDown and second rider for Rider2DropDown
@@ -741,7 +811,7 @@ classdef RythmTab < handle
             if ~isempty(rider1) && ~isequal(rider1, '')
                 mask1 = contains(riderNames, rider1, 'IgnoreCase', true);
                 if any(mask1)
-                    redStyle = uistyle('BackgroundColor', [1 0.5 0.5]); % Light red
+                    redStyle = uistyle('BackgroundColor', [1 0 0]); % Strong red (same as other tabs)
                     rows1 = find(mask1);
                     numCols = width(obj.TableData);
                     for r = 1:length(rows1)
@@ -785,6 +855,7 @@ classdef RythmTab < handle
             % Clear all styles and re-apply highlights for both riders
             obj.clearSectorsTableStyles();
             obj.updateSectorsHighlighting();
+            obj.updateSectorsSummaryHighlighting();
         end
         
         function onSector2Changed(obj)
@@ -792,6 +863,7 @@ classdef RythmTab < handle
             % Clear all styles and re-apply highlights for both riders
             obj.clearSectorsTableStyles();
             obj.updateSectorsHighlighting();
+            obj.updateSectorsSummaryHighlighting();
         end
         
         function clearSectorsTableStyles(obj)
@@ -829,6 +901,7 @@ classdef RythmTab < handle
             
             % Clear all styles using the same function
             obj.clearSectorsTableStyles();
+            obj.clearSectorsSummaryTableStyles();
         end
         
         function updateSectorsHighlighting(obj)
@@ -1036,9 +1109,6 @@ classdef RythmTab < handle
                     obj.LapsTable1.Data = T_display;
                     obj.LapsTable1.ColumnName = colNames;
                     
-                    % Set column widths to fill the table width
-                    obj.fitColumnsToTableWidth(obj.LapsTable1);
-                    
                     % Reset all cells to default white background with center alignment
                     obj.resetTableBackgrounds(obj.LapsTable1, T_display);
                     
@@ -1054,6 +1124,10 @@ classdef RythmTab < handle
                     % Highlight fastest sector times in red (this will show on top of heatmap)
                     obj.highlightFastestSectors(obj.LapsTable1, T_display, [1 0 0]); % Red
                     
+                    % Set column widths to fill the table width (after all updates)
+                    drawnow;
+                    obj.fitColumnsToTableWidth(obj.LapsTable1);
+                    
                     % Update summary table with ideal lap time, fastest sectors, and fastest speed
                     obj.updateLapsSummaryTable(1, T_display);
                 else
@@ -1067,9 +1141,6 @@ classdef RythmTab < handle
                     if isprop(obj.LapsTable2, 'ColumnFormat')
                         obj.LapsTable2.ColumnFormat = {};
                     end
-                    
-                    % Set column widths to fill the table width
-                    obj.fitColumnsToTableWidth(obj.LapsTable2);
                     
                     % Reset all cells to default white background with center alignment
                     obj.resetTableBackgrounds(obj.LapsTable2, T_display);
@@ -1086,6 +1157,10 @@ classdef RythmTab < handle
                     % Highlight fastest sector times in strong light blue (this will show on top of heatmap)
                     obj.highlightFastestSectors(obj.LapsTable2, T_display, [0.3 0.7 1]); % Strong light blue
                     
+                    % Set column widths to fill the table width (after all updates)
+                    drawnow;
+                    obj.fitColumnsToTableWidth(obj.LapsTable2);
+                    
                     % Update summary table with ideal lap time, fastest sectors, and fastest speed
                     obj.updateLapsSummaryTable(2, T_display);
                 end
@@ -1096,27 +1171,64 @@ classdef RythmTab < handle
             %FITCOLUMNSTOTABLEWIDTH Calculate column widths to fill the table width
             % Get the table's parent panel to determine available width
             try
-                % Strategy: Use ParentFigure width directly (we know it's stored)
-                % Tables are in a 2-column grid, so each gets ~50% minus padding
                 availableWidth = 0;
+                
+                % Check if this is the sectors table or speeds table (both are in 2-column grids)
+                isSectorsTable = (tableObj == obj.SectorsTable);
+                isSpeedsTable = (tableObj == obj.SpeedsTable);
                 
                 if isvalid(obj.ParentFigure)
                     figureWidth = obj.ParentFigure.Position(3);
                     if figureWidth > 100
-                        % Two-column layout: each column gets ~50% of width minus padding
-                        % lapsGrid has padding of 10 on each side = 20 total
-                        % sectionGrid has padding of 5 on each side = 10 total per section
-                        availableWidth = (figureWidth - 20) / 2 - 20; % Grid + section padding
+                        if isSectorsTable
+                            % Sectors table is in a 2-column grid: 2x (sectors) and 1x (summary)
+                            % sectorsGrid has padding of 10 on each side = 20 total
+                            % Sectors table gets 2/3 of the available width (2x out of 2x+1x=3x total)
+                            availableWidth = (figureWidth - 20) * 2/3 - 40; % Grid padding + margin
+                        elseif isSpeedsTable
+                            % Speeds table is in a 2-column grid: 2x (table) and 1x (graph)
+                            % speedsGrid has padding of 10 on each side = 20 total
+                            % Speeds table gets 2/3 of the available width (2x out of 2x+1x=3x total)
+                            availableWidth = (figureWidth - 20) * 2/3 - 40; % Grid padding + margin
+                        else
+                            % Laps tables: Two-column layout: each column gets ~50% of width minus padding
+                            % lapsGrid has padding of 10 on each side = 20 total
+                            % sectionGrid has padding of 5 on each side = 10 total per section
+                            availableWidth = (figureWidth - 20) / 2 - 20; % Grid + section padding
+                        end
                     end
                 end
                 
-                % Fallback: try parent panel if figure approach didn't work
+                % Try Position-based width as a refinement, but only if it's larger than figure calculation
+                % This ensures we use the most accurate available width, while prioritizing figure calculation
+                % on initial load when Position might not be accurate yet
+                if isvalid(tableObj) && isprop(tableObj, 'Position') && length(tableObj.Position) >= 3
+                    tableWidth = tableObj.Position(3);
+                    if tableWidth > 50
+                        positionBasedWidth = tableWidth - 20; % Use actual table width minus small margin
+                        % Use Position-based width if it's larger (more accurate after layout settles)
+                        if positionBasedWidth > availableWidth
+                            availableWidth = positionBasedWidth;
+                        end
+                    end
+                end
+                
+                % Fallback: try parent panel/grid if we still don't have a good width
                 if availableWidth <= 50
                     parentPanel = tableObj.Parent;
-                    if isvalid(parentPanel)
-                        panelWidth = parentPanel.Position(3);
-                        if panelWidth > 50
-                            availableWidth = panelWidth - 30;
+                    if isvalid(parentPanel) && isprop(parentPanel, 'Position') && length(parentPanel.Position) >= 3
+                        if isSectorsTable || isSpeedsTable
+                            % For sectors/speeds table, parent is the grid layout
+                            gridWidth = parentPanel.Position(3);
+                            if gridWidth > 50
+                                % Both tables are in column 1 of 2-column grid (2x ratio)
+                                availableWidth = gridWidth * 2/3 - 40;
+                            end
+                        else
+                            panelWidth = parentPanel.Position(3);
+                            if panelWidth > 50
+                                availableWidth = panelWidth - 30;
+                            end
                         end
                     end
                 end
@@ -1130,10 +1242,51 @@ classdef RythmTab < handle
                 end
                 
                 if numCols > 0 && availableWidth > 50
-                    % Calculate equal width for each column to fill the available width
-                    colWidth = max(60, floor(availableWidth / numCols)); % Minimum 60 pixels per column
-                    columnWidths = repmat({colWidth}, 1, numCols);
-                    tableObj.ColumnWidth = columnWidths;
+                    % Check if this is the speeds table - need to exclude hidden columns (Max-Avg and Range)
+                    isSpeedsTableForWidth = (tableObj == obj.SpeedsTable);
+                    hiddenColIndices = [];
+                    
+                    if isSpeedsTableForWidth && ~isempty(tableObj.ColumnName)
+                        maxAvgIdx = find(strcmp(tableObj.ColumnName, 'Max-Avg'), 1);
+                        rangeIdx = find(strcmp(tableObj.ColumnName, 'Range'), 1);
+                        if ~isempty(maxAvgIdx)
+                            hiddenColIndices(end+1) = maxAvgIdx;
+                        end
+                        if ~isempty(rangeIdx)
+                            hiddenColIndices(end+1) = rangeIdx;
+                        end
+                    end
+                    
+                    visibleCols = numCols - length(hiddenColIndices);
+                    
+                    % Calculate equal width for each visible column to fill the available width
+                    if visibleCols > 0
+                        colWidth = floor(availableWidth / visibleCols);
+                        columnWidths = cell(1, numCols);
+                        
+                        % Set widths: 0 for hidden columns, calculated width for visible columns
+                        for i = 1:numCols
+                            if ismember(i, hiddenColIndices)
+                                columnWidths{i} = 0; % Hide this column
+                            else
+                                columnWidths{i} = colWidth;
+                            end
+                        end
+                        
+                        % Distribute remainder to last visible column to ensure full width is used
+                        remainder = availableWidth - (colWidth * visibleCols);
+                        if remainder > 0
+                            % Find last visible column
+                            for i = numCols:-1:1
+                                if ~ismember(i, hiddenColIndices)
+                                    columnWidths{i} = colWidth + remainder;
+                                    break;
+                                end
+                            end
+                        end
+                        
+                        tableObj.ColumnWidth = columnWidths;
+                    end
                 end
             catch ME
                 % If calculation fails, use 'fit' as fallback
@@ -1258,19 +1411,15 @@ classdef RythmTab < handle
                         
                         % Only apply heatmap if we have valid data with range
                         if ~isempty(minVal) && ~isempty(maxVal) && ~isnan(minVal) && ~isnan(maxVal) && minVal < maxVal
-                            % 4-color gradient: Red -> Orange -> Light Blue -> Dark Blue
-                            % Make 50% transparent by blending with white (50% = 0.5 * color + 0.5 * white)
-                            baseRed = [1.0 0.0 0.0];         % Red
-                            baseOrange = [1.0 0.5 0.0];      % Orange
-                            baseLightBlue = [0.5 0.8 1.0];   % Light blue
-                            baseDarkBlue = [0.0 0.3 0.8];    % Dark blue
-                            white = [1.0 1.0 1.0];           % White for blending
+                            % 2-color gradient: Light Green -> Dark Green
+                            % Make 25% transparent by blending with white (25% = 0.25 * color + 0.75 * white)
+                            baseLightGreen = [0.6 1.0 0.6];   % Light green
+                            baseDarkGreen = [0.0 0.5 0.0];    % Dark green
+                            white = [1.0 1.0 1.0];            % White for blending
                             
-                            % Apply 50% transparency
-                            redColor = 0.5 * baseRed + 0.5 * white;
-                            orangeColor = 0.5 * baseOrange + 0.5 * white;
-                            lightBlueColor = 0.5 * baseLightBlue + 0.5 * white;
-                            darkBlueColor = 0.5 * baseDarkBlue + 0.5 * white;
+                            % Apply 25% transparency (25% = 0.25 * color + 0.75 * white)
+                            lightGreenColor = 0.25 * baseLightGreen + 0.75 * white;
+                            darkGreenColor = 0.25 * baseDarkGreen + 0.75 * white;
                             
                             % For speed columns, reverse the direction (higher is better)
                             % For lap_time and sectors, lower is better (normal direction)
@@ -1288,21 +1437,9 @@ classdef RythmTab < handle
                                         normalizedVal = 1 - normalizedVal;
                                     end
                                     
-                                    % Interpolate between 4 colors based on normalized value
-                                    % Split into 3 segments: [0-0.33] red->orange, [0.33-0.67] orange->light blue, [0.67-1] light blue->dark blue
-                                    if normalizedVal <= 1/3
-                                        % Red to Orange (0 to 0.33)
-                                        segmentVal = normalizedVal / (1/3); % 0 to 1 within this segment
-                                        cellColor = redColor * (1 - segmentVal) + orangeColor * segmentVal;
-                                    elseif normalizedVal <= 2/3
-                                        % Orange to Light Blue (0.33 to 0.67)
-                                        segmentVal = (normalizedVal - 1/3) / (1/3); % 0 to 1 within this segment
-                                        cellColor = orangeColor * (1 - segmentVal) + lightBlueColor * segmentVal;
-                                    else
-                                        % Light Blue to Dark Blue (0.67 to 1.0)
-                                        segmentVal = (normalizedVal - 2/3) / (1/3); % 0 to 1 within this segment
-                                        cellColor = lightBlueColor * (1 - segmentVal) + darkBlueColor * segmentVal;
-                                    end
+                                    % Interpolate between light green and dark green
+                                    % Light green for best values (0), dark green for worst values (1)
+                                    cellColor = lightGreenColor * (1 - normalizedVal) + darkGreenColor * normalizedVal;
                                     
                                     % Create style for this cell
                                     heatmapStyle = uistyle('BackgroundColor', cellColor, 'HorizontalAlignment', 'center');
@@ -1640,12 +1777,50 @@ classdef RythmTab < handle
                 % Explicitly set column names to ensure they display (table VariableNames should match)
                 summaryTableObj.ColumnName = colNames;
                 
+                % Clear existing styles first
+                styleObjs = findall(summaryTableObj, 'Type', 'uistyle');
+                for i = 1:length(styleObjs)
+                    try
+                        removeStyle(summaryTableObj, styleObjs(i));
+                    catch
+                        % Ignore errors
+                    end
+                end
+                
                 % Set column widths to fit
                 obj.fitColumnsToTableWidth(summaryTableObj);
                 
-                % Apply center alignment
-                centerStyle = uistyle('HorizontalAlignment', 'center');
-                addStyle(summaryTableObj, centerStyle);
+                % Apply center alignment and dark green background to all cells except first column
+                % Get the darkest green color from heatmap (25% transparency)
+                baseDarkGreen = [0.0 0.5 0.0];    % Base dark green
+                white = [1.0 1.0 1.0];            % White for blending
+                darkGreenColor = 0.25 * baseDarkGreen + 0.75 * white;  % 25% transparency
+                
+                % Get table dimensions
+                numRows = height(summaryTable);
+                numCols = width(summaryTable);
+                
+                if numRows > 0 && numCols > 0
+                    % Center alignment for all cells
+                    centerStyle = uistyle('HorizontalAlignment', 'center');
+                    addStyle(summaryTableObj, centerStyle);
+                    
+                    % Dark green background for all cells except first column (column 1)
+                    if numCols > 1
+                        % Create cell indices for all cells except column 1
+                        cellIndices = [];
+                        for r = 1:numRows
+                            for c = 2:numCols  % Start from column 2
+                                cellIndices(end+1, :) = [r, c];
+                            end
+                        end
+                        
+                        if ~isempty(cellIndices)
+                            darkGreenStyle = uistyle('BackgroundColor', darkGreenColor, 'HorizontalAlignment', 'center');
+                            addStyle(summaryTableObj, darkGreenStyle, 'cell', cellIndices);
+                        end
+                    end
+                end
                 
                 % Set column widths to fill the table width
                 obj.fitColumnsToTableWidth(summaryTableObj);
@@ -1669,8 +1844,8 @@ classdef RythmTab < handle
             try
                 if isempty(obj.SectorsData) || ~isa(obj.SectorsData, 'table')
                     % Set empty table with column headers
-                    obj.SectorsTable.Data = cell(0, 8);
-                    obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+                    obj.SectorsTable.Data = cell(0, 9);
+                    obj.SectorsTable.ColumnName = {'Position', 'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
                                                    'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
                                                    'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
                                                    'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
@@ -1683,8 +1858,8 @@ classdef RythmTab < handle
                    ~ismember('rider_name', varNames) || ...
                    ~ismember('sector_time', varNames)
                     % Set empty table with column headers
-                    obj.SectorsTable.Data = cell(0, 8);
-                    obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+                    obj.SectorsTable.Data = cell(0, 9);
+                    obj.SectorsTable.ColumnName = {'Position', 'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
                                                    'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
                                                    'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
                                                    'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
@@ -1773,8 +1948,8 @@ classdef RythmTab < handle
             
             if maxRows == 0
                 % No data, but show column headers
-                obj.SectorsTable.Data = cell(0, 8);
-                obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+                obj.SectorsTable.Data = cell(0, 9);
+                obj.SectorsTable.ColumnName = {'Position', 'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
                                                'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
                                                'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
                                                'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
@@ -1782,7 +1957,8 @@ classdef RythmTab < handle
             end
             
             % Create the combined table using a table object (similar to LapsTable)
-            % Initialize columns as string arrays for names and numeric arrays for times
+            % Initialize columns: position first, then sector names and times
+            position = (1:maxRows)';  % Position column: 1, 2, 3, ...
             sector1Names = strings(maxRows, 1);
             sector1Times = NaN(maxRows, 1);
             sector2Names = strings(maxRows, 1);
@@ -1864,8 +2040,8 @@ classdef RythmTab < handle
                 end
             end
             
-            % Create table object
-            combinedTable = table(sector1Names, sector1Times, ...
+            % Create table object (Position first, then sector columns)
+            combinedTable = table(position, sector1Names, sector1Times, ...
                                   sector2Names, sector2Times, ...
                                   sector3Names, sector3Times, ...
                                   sector4Names, sector4Times);
@@ -1876,13 +2052,27 @@ classdef RythmTab < handle
                 obj.SectorsTable.ColumnFormat = {};
             end
             obj.SectorsTable.Data = combinedTable;
-            obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+            obj.SectorsTable.ColumnName = {'Position', 'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
                                            'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
                                            'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
                                            'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
             
-            % Force table refresh
+            % Force table refresh first
             drawnow;
+            
+            % Set column widths to fill the table width (call after drawnow to ensure table is rendered)
+            obj.fitColumnsToTableWidth(obj.SectorsTable);
+            
+            % Also use multiple timers to ensure column widths are set after UI fully renders
+            t1 = timer('ExecutionMode', 'singleShot', 'StartDelay', 0.1, ...
+                      'TimerFcn', @(~,~) obj.fitColumnsToTableWidth(obj.SectorsTable));
+            start(t1);
+            t2 = timer('ExecutionMode', 'singleShot', 'StartDelay', 0.3, ...
+                      'TimerFcn', @(~,~) obj.fitColumnsToTableWidth(obj.SectorsTable));
+            start(t2);
+            t3 = timer('ExecutionMode', 'singleShot', 'StartDelay', 0.8, ...
+                      'TimerFcn', @(~,~) obj.fitColumnsToTableWidth(obj.SectorsTable));
+            start(t3);
             
                 % Apply center alignment (if not already applied)
                 styleObjs = findall(obj.SectorsTable, 'Type', 'uistyle');
@@ -1894,15 +2084,323 @@ classdef RythmTab < handle
                 % Update highlighting based on selected riders (clear first, then highlight)
                 obj.clearSectorsTableStyles();
                 obj.updateSectorsHighlighting();
+                obj.updateSectorsSummaryTable();
             catch ME
                 warning('RythmTab:UpdateSectorsTableError', ...
                     'Error updating sectors table: %s', ME.message);
                 % Set empty table with column headers on error
-                obj.SectorsTable.Data = cell(0, 8);
-                obj.SectorsTable.ColumnName = {'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
+                obj.SectorsTable.Data = cell(0, 9);
+                obj.SectorsTable.ColumnName = {'Position', 'Sector 1 Rider Name', 'Sector 1 Rider Laptime', ...
                                                'Sector 2 Rider Name', 'Sector 2 Rider Laptime', ...
                                                'Sector 3 Rider Name', 'Sector 3 Rider Laptime', ...
                                                'Sector 4 Rider Name', 'Sector 4 Rider Laptime'};
+            end
+        end
+        
+        function updateSectorsSummaryTable(obj)
+            %UPDATESECTORSSUMMARYTABLE Update summary table with position, ideal laptime, and best laptime for each rider
+            try
+                if isempty(obj.SectorsTable.Data) || ~istable(obj.SectorsTable.Data)
+                    % Clear summary table
+                    if isprop(obj.SectorsSummaryTable, 'ColumnFormat')
+                        obj.SectorsSummaryTable.ColumnFormat = {};
+                    end
+                    obj.SectorsSummaryTable.Data = {};
+                    return;
+                end
+                
+                sectorsTableData = obj.SectorsTable.Data;
+                numRows = height(sectorsTableData);
+                
+                if numRows == 0
+                    % Clear summary table
+                    if isprop(obj.SectorsSummaryTable, 'ColumnFormat')
+                        obj.SectorsSummaryTable.ColumnFormat = {};
+                    end
+                    obj.SectorsSummaryTable.Data = {};
+                    return;
+                end
+                
+                % Get all unique riders from the sectors table
+                % Collect riders from all sector columns
+                allRiders = {};
+                for sectorNum = 1:4
+                    nameColName = sprintf('sector%dNames', sectorNum);
+                    if ismember(nameColName, sectorsTableData.Properties.VariableNames)
+                        nameColData = sectorsTableData.(nameColName);
+                        if iscell(nameColData)
+                            nameColData = string(nameColData);
+                        elseif ~isstring(nameColData)
+                            nameColData = string(nameColData);
+                        end
+                        % Add non-empty riders
+                        for r = 1:numRows
+                            rider = string(nameColData(r));
+                            if ~ismissing(rider) && strlength(rider) > 0
+                                allRiders{end+1} = char(rider);
+                            end
+                        end
+                    end
+                end
+                
+                % Get unique riders
+                uniqueRiders = unique(allRiders, 'stable');
+                
+                if isempty(uniqueRiders)
+                    % Clear summary table
+                    if isprop(obj.SectorsSummaryTable, 'ColumnFormat')
+                        obj.SectorsSummaryTable.ColumnFormat = {};
+                    end
+                    obj.SectorsSummaryTable.Data = {};
+                    return;
+                end
+                
+                % Initialize arrays for summary data
+                riderNames = strings(length(uniqueRiders), 1);
+                positions = zeros(length(uniqueRiders), 1);
+                idealLaptimes = strings(length(uniqueRiders), 1);
+                bestLaptimes = strings(length(uniqueRiders), 1);
+                
+                % Get TableData for positions
+                ridersTableData = obj.TableData;
+                
+                % Get LapsData for best lap times
+                lapsData = obj.LapsData;
+                
+                % Process each rider
+                for i = 1:length(uniqueRiders)
+                    riderName = uniqueRiders{i};
+                    riderNames(i) = riderName;
+                    
+                    % Get position from riders table
+                    position = NaN;
+                    if ~isempty(ridersTableData) && istable(ridersTableData)
+                        if ismember('rider_name', ridersTableData.Properties.VariableNames)
+                            riderNamesInTable = ridersTableData.rider_name;
+                            if iscell(riderNamesInTable)
+                                riderNamesInTable = string(riderNamesInTable);
+                            end
+                            riderMask = strcmpi(string(riderNamesInTable), riderName);
+                            if any(riderMask)
+                                if ismember('position', ridersTableData.Properties.VariableNames)
+                                    positionData = ridersTableData.position(riderMask);
+                                    if isnumeric(positionData)
+                                        position = positionData(1);
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    positions(i) = position;
+                    
+                    % Calculate ideal laptime (sum of best sector times for this rider)
+                    idealLaptimeSeconds = 0;
+                    for sectorNum = 1:4
+                        nameColName = sprintf('sector%dNames', sectorNum);
+                        timeColName = sprintf('sector%dTimes', sectorNum);
+                        if ismember(nameColName, sectorsTableData.Properties.VariableNames) && ...
+                           ismember(timeColName, sectorsTableData.Properties.VariableNames)
+                            nameColData = sectorsTableData.(nameColName);
+                            timeColData = sectorsTableData.(timeColName);
+                            if iscell(nameColData)
+                                nameColData = string(nameColData);
+                            end
+                            % Find this rider's best time in this sector
+                            riderMask = strcmpi(string(nameColData), riderName);
+                            if any(riderMask)
+                                riderTimes = timeColData(riderMask);
+                                riderTimes = riderTimes(~isnan(riderTimes) & riderTimes > 0);
+                                if ~isempty(riderTimes)
+                                    idealLaptimeSeconds = idealLaptimeSeconds + min(riderTimes);
+                                end
+                            end
+                        end
+                    end
+                    
+                    % Format ideal laptime as "M'SS.mmm"
+                    if idealLaptimeSeconds > 0
+                        minutes = floor(idealLaptimeSeconds / 60);
+                        remainingSeconds = idealLaptimeSeconds - (minutes * 60);
+                        idealLaptimes(i) = sprintf('%d''%.3f', minutes, remainingSeconds);
+                    else
+                        idealLaptimes(i) = '0''0.000';
+                    end
+                    
+                    % Get best lap time from laps data
+                    bestLaptimeFormatted = '0''0.000';
+                    if ~isempty(lapsData) && istable(lapsData)
+                        if ismember('rider_name', lapsData.Properties.VariableNames) && ...
+                           ismember('lap_time', lapsData.Properties.VariableNames)
+                            riderNamesInLaps = lapsData.rider_name;
+                            if iscell(riderNamesInLaps)
+                                riderNamesInLaps = string(riderNamesInLaps);
+                            end
+                            riderMask = strcmpi(string(riderNamesInLaps), riderName);
+                            if any(riderMask)
+                                lapTimeData = lapsData.lap_time(riderMask);
+                                % Parse lap times (format: "M'SS.mmm")
+                                lapTimesSeconds = [];
+                                for j = 1:length(lapTimeData)
+                                    lapTimeStr = string(lapTimeData(j));
+                                    if contains(lapTimeStr, '''')
+                                        parts = split(lapTimeStr, '''');
+                                        if length(parts) >= 2
+                                            minutes = str2double(parts(1));
+                                            secondsPart = str2double(parts(2));
+                                            if ~isnan(minutes) && ~isnan(secondsPart)
+                                                totalSeconds = minutes * 60 + secondsPart;
+                                                lapTimesSeconds(end+1) = totalSeconds;
+                                            end
+                                        end
+                                    else
+                                        % Try as plain number
+                                        secs = str2double(lapTimeStr);
+                                        if ~isnan(secs)
+                                            lapTimesSeconds(end+1) = secs;
+                                        end
+                                    end
+                                end
+                                if ~isempty(lapTimesSeconds)
+                                    bestLaptimeSeconds = min(lapTimesSeconds);
+                                    minutes = floor(bestLaptimeSeconds / 60);
+                                    remainingSeconds = bestLaptimeSeconds - (minutes * 60);
+                                    bestLaptimeFormatted = sprintf('%d''%.3f', minutes, remainingSeconds);
+                                end
+                            end
+                        end
+                    end
+                    bestLaptimes(i) = bestLaptimeFormatted;
+                end
+                
+                % Create summary table (Position first, then Rider_Name)
+                summaryTable = table(positions, riderNames, idealLaptimes, bestLaptimes, ...
+                    'VariableNames', {'Position', 'Rider_Name', 'Ideal_Laptime', 'Best_Laptime'});
+                
+                % Sort by position (ascending order, NaN values go to the end)
+                % Create a sort key: NaN positions get a very high value for sorting
+                sortKey = summaryTable.Position;
+                sortKey(isnan(sortKey)) = Inf;
+                [~, sortIdx] = sort(sortKey);
+                summaryTable = summaryTable(sortIdx, :);
+                
+                % Update the summary table
+                if isprop(obj.SectorsSummaryTable, 'ColumnFormat')
+                    obj.SectorsSummaryTable.ColumnFormat = {};
+                end
+                obj.SectorsSummaryTable.Data = summaryTable;
+                
+                % Update highlighting for summary table
+                obj.updateSectorsSummaryHighlighting();
+                
+            catch ME
+                warning('RythmTab:UpdateSectorsSummaryTableError', ...
+                    'Error updating sectors summary table: %s', ME.message);
+                % Clear on error
+                if isprop(obj.SectorsSummaryTable, 'ColumnFormat')
+                    obj.SectorsSummaryTable.ColumnFormat = {};
+                end
+                obj.SectorsSummaryTable.Data = {};
+            end
+        end
+        
+        function clearSectorsSummaryTableStyles(obj)
+            %CLEARSECTORSSUMMARYTABLESTYLES Clear all styles from sectors summary table
+            % Uses StyleConfigurations to get styles and removes them by index
+            if isempty(obj.SectorsSummaryTable) || ~isvalid(obj.SectorsSummaryTable)
+                return;
+            end
+            
+            % Get the number of styles using StyleConfigurations
+            numStyles = size(obj.SectorsSummaryTable.StyleConfigurations, 1);
+            
+            % Remove each style by index, starting from the last one (reverse order)
+            if numStyles > 0
+                for i = numStyles:-1:1
+                    try
+                        removeStyle(obj.SectorsSummaryTable, i);
+                    catch
+                        % Ignore errors and continue
+                    end
+                end
+            end
+            
+            % Re-apply center alignment
+            centerStyle = uistyle('HorizontalAlignment', 'center');
+            addStyle(obj.SectorsSummaryTable, centerStyle);
+        end
+        
+        function updateSectorsSummaryHighlighting(obj)
+            %UPDATESECTORSSUMMARYHIGHLIGHTING Update highlighting in sectors summary table based on selected riders
+            % Highlights complete rows for selected riders
+            if isempty(obj.SectorsSummaryTable.Data) || ~istable(obj.SectorsSummaryTable.Data)
+                return;
+            end
+            
+            % Clear existing styles first
+            obj.clearSectorsSummaryTableStyles();
+            
+            % Get selected riders (both combo boxes)
+            rider1 = obj.Sector1DropDown.Value;
+            rider2 = obj.Sector2DropDown.Value;
+            
+            % Get table data
+            summaryTableData = obj.SectorsSummaryTable.Data;
+            if isempty(summaryTableData) || ~istable(summaryTableData)
+                return;
+            end
+            
+            % Get rider name column
+            if ~ismember('Rider_Name', summaryTableData.Properties.VariableNames)
+                return;
+            end
+            
+            riderNameColData = summaryTableData.Rider_Name;
+            if iscell(riderNameColData)
+                riderNames = string(riderNameColData);
+            elseif isstring(riderNameColData)
+                riderNames = riderNameColData;
+            else
+                riderNames = string(riderNameColData);
+            end
+            
+            % Replace missing/empty strings with empty string for proper comparison
+            riderNames(ismissing(riderNames)) = "";
+            
+            numRows = height(summaryTableData);
+            numCols = width(summaryTableData);
+            
+            % Highlight rider 1 in red
+            if ~isempty(rider1) && ~isequal(rider1, '')
+                mask1 = contains(riderNames, rider1, 'IgnoreCase', true);
+                mask1 = mask1 & (strlength(riderNames) > 0);
+                if any(mask1)
+                    rows1 = find(mask1);
+                    for r = 1:length(rows1)
+                        rowIdx = rows1(r);
+                        % Create style for entire row
+                        redStyle = uistyle('BackgroundColor', [1 0 0], 'HorizontalAlignment', 'center');
+                        % Create cell indices for all cells in the row
+                        cellIndices = [repmat(rowIdx, numCols, 1), (1:numCols)'];
+                        addStyle(obj.SectorsSummaryTable, redStyle, 'cell', cellIndices);
+                    end
+                end
+            end
+            
+            % Highlight rider 2 in blue
+            if ~isempty(rider2) && ~isequal(rider2, '')
+                mask2 = contains(riderNames, rider2, 'IgnoreCase', true);
+                mask2 = mask2 & (strlength(riderNames) > 0);
+                if any(mask2)
+                    rows2 = find(mask2);
+                    for r = 1:length(rows2)
+                        rowIdx = rows2(r);
+                        % Create style for entire row
+                        blueStyle = uistyle('BackgroundColor', [0.3 0.7 1], 'HorizontalAlignment', 'center');
+                        % Create cell indices for all cells in the row
+                        cellIndices = [repmat(rowIdx, numCols, 1), (1:numCols)'];
+                        addStyle(obj.SectorsSummaryTable, blueStyle, 'cell', cellIndices);
+                    end
+                end
             end
         end
         
@@ -2010,6 +2508,609 @@ classdef RythmTab < handle
             %SCROLLRIDERSTABLETOTOP Scroll the riders table to the top
             % No longer needed - table is directly in grid layout (no scrollable panel)
             % This function is kept for compatibility but does nothing
+        end
+        
+        function updateSpeedsTable(obj)
+            %UPDATESPEEDSTABLE Update speeds table with riders sorted by fastest speed
+            % Uses motogp_analysis_laps.csv speed column to get top speeds per rider
+            try
+                % Load laps CSV directly
+                [csvDir, ~, ~] = fileparts(obj.CsvPath);
+                lapsCsvPath = fullfile(csvDir, 'motogp_analysis_laps.csv');
+                
+                if ~isfile(lapsCsvPath)
+                    obj.SpeedsTable.Data = {};
+                    obj.SpeedsTable.ColumnName = {};
+                    return;
+                end
+                
+                lapsTable = readtable(lapsCsvPath);
+                
+                if isempty(lapsTable) || ~istable(lapsTable)
+                    obj.SpeedsTable.Data = {};
+                    obj.SpeedsTable.ColumnName = {};
+                    return;
+                end
+                
+                % Find the speed column
+                varNames = lapsTable.Properties.VariableNames;
+                speedColName = '';
+                riderNameColName = '';
+                
+                % First, try to use column 15 directly (same as updateLapsTable)
+                if length(varNames) >= 15
+                    speedColName = varNames{15};
+                end
+                
+                % If column 15 doesn't exist or doesn't contain 'speed', try to find by name
+                if isempty(speedColName) || ~contains(lower(speedColName), 'speed')
+                    % Try to find exact match for 'speed' (case insensitive)
+                    for i = 1:length(varNames)
+                        if strcmpi(varNames{i}, 'speed')
+                            speedColName = varNames{i};
+                            break;
+                        end
+                    end
+                    
+                    % If still not found, look for any column containing 'speed' but not 'max_speed' or 'top_speed'
+                    if isempty(speedColName)
+                        for i = 1:length(varNames)
+                            varNameLower = lower(varNames{i});
+                            if contains(varNameLower, 'speed') && ...
+                               ~contains(varNameLower, 'max_speed') && ...
+                               ~contains(varNameLower, 'top_speed')
+                                speedColName = varNames{i};
+                                break; % Take the first match
+                            end
+                        end
+                    end
+                end
+                
+                % Find rider name column - look for rider_name or rider name
+                for i = 1:length(varNames)
+                    varNameLower = lower(varNames{i});
+                    if contains(varNameLower, 'rider_name') || ...
+                       (contains(varNameLower, 'rider') && contains(varNameLower, 'name'))
+                        riderNameColName = varNames{i};
+                        break;
+                    end
+                end
+                
+                if isempty(speedColName) || isempty(riderNameColName)
+                    obj.SpeedsTable.Data = {};
+                    obj.SpeedsTable.ColumnName = {};
+                    return;
+                end
+                
+                % Get unique riders
+                riderNamesRaw = lapsTable.(riderNameColName);
+                if iscell(riderNamesRaw)
+                    riderNamesRaw = string(riderNamesRaw);
+                end
+                riderNamesRaw = string(riderNamesRaw);
+                uniqueRiders = unique(riderNamesRaw, 'stable');
+                
+                % For each rider, extract all speed values, get top 5 speeds
+                speedsData = cell(length(uniqueRiders), 12); % Position, Rider, Speed1-5, Average, Max_Speed, Max-Avg, Range, SlipstreamLikelihood
+                
+                for i = 1:length(uniqueRiders)
+                    rider = uniqueRiders(i);
+                    riderMask = strcmp(riderNamesRaw, rider);
+                    riderSpeeds = lapsTable.(speedColName)(riderMask);
+                    
+                    % Convert to numeric and filter out NaN and zero values
+                    if isnumeric(riderSpeeds)
+                        validSpeeds = riderSpeeds(~isnan(riderSpeeds) & riderSpeeds > 0);
+                    else
+                        riderSpeeds = double(riderSpeeds);
+                        validSpeeds = riderSpeeds(~isnan(riderSpeeds) & riderSpeeds > 0);
+                    end
+                    
+                    if ~isempty(validSpeeds)
+                        % Sort speeds in descending order (fastest first)
+                        sortedSpeeds = sort(validSpeeds, 'descend');
+                        
+                        % Get top 5 speeds (or fewer if less than 5 available)
+                        top5Speeds = sortedSpeeds(1:min(5, length(sortedSpeeds)));
+                        maxSpeed = sortedSpeeds(1); % Overall fastest speed
+                        
+                        % Reverse the order so Speed5 is the fastest (Speed1 is slowest of the 5)
+                        top5SpeedsReversed = top5Speeds(end:-1:1);
+                        
+                        % Fill speedsData
+                        speedsData{i, 1} = i; % Position (will be updated after sorting)
+                        speedsData{i, 2} = char(rider); % Rider name
+                        % Fill top 5 speeds in reversed order (Speed5 = fastest, Speed1 = slowest of top 5)
+                        for j = 1:5
+                            if j <= length(top5SpeedsReversed)
+                                speedsData{i, 2+j} = top5SpeedsReversed(j);
+                            else
+                                speedsData{i, 2+j} = NaN;
+                            end
+                        end
+                        % Calculate average of Speed1-5
+                        speedValues = [speedsData{i, 3}; speedsData{i, 4}; speedsData{i, 5}; speedsData{i, 6}; speedsData{i, 7}];
+                        validSpeedValues = speedValues(~isnan(speedValues));
+                        if ~isempty(validSpeedValues)
+                            speedsData{i, 8} = mean(validSpeedValues); % Average
+                        else
+                            speedsData{i, 8} = NaN; % Average
+                        end
+                        speedsData{i, 9} = maxSpeed; % Max speed (overall fastest)
+                        
+                        % Calculate Max-Avg (Max_Speed - Average)
+                        speedsData{i, 10} = maxSpeed - speedsData{i, 8}; % Max-Avg
+                        
+                        % Calculate Range (Max of 5 speeds - Min of 5 speeds)
+                        % top5SpeedsReversed has Speed1 (slowest) to Speed5 (fastest)
+                        % So max is Speed5 (last element) and min is Speed1 (first element)
+                        validTop5Speeds = top5SpeedsReversed(~isnan(top5SpeedsReversed));
+                        if ~isempty(validTop5Speeds) && length(validTop5Speeds) > 1
+                            maxOf5 = max(validTop5Speeds); % This is Speed5
+                            minOf5 = min(validTop5Speeds); % This is Speed1
+                            speedsData{i, 11} = maxOf5 - minOf5; % Range
+                        elseif length(validTop5Speeds) == 1
+                            speedsData{i, 11} = 0; % Only one speed, range is 0
+                        else
+                            speedsData{i, 11} = NaN; % Range
+                        end
+                        
+                        % SlipstreamLikelihood will be calculated after we have all data
+                        speedsData{i, 12} = NaN; % Placeholder for SlipstreamLikelihood
+                    else
+                        speedsData{i, 1} = i;
+                        speedsData{i, 2} = char(rider);
+                        for j = 3:12
+                            speedsData{i, j} = NaN;
+                        end
+                    end
+                end
+                
+                % Calculate session statistics for SlipstreamLikelihood scoring
+                % Get all valid averages and max speeds
+                allAverages = [];
+                allMaxSpeeds = [];
+                for i = 1:length(uniqueRiders)
+                    if ~isnan(speedsData{i, 8}) && ~isnan(speedsData{i, 9})
+                        allAverages(end+1) = speedsData{i, 8};
+                        allMaxSpeeds(end+1) = speedsData{i, 9};
+                    end
+                end
+                sessionAvg = mean(allAverages);
+                sessionTopSpeed = max(allMaxSpeeds);
+                
+                % Calculate SlipstreamLikelihood score for each rider
+                for i = 1:length(uniqueRiders)
+                    if ~isnan(speedsData{i, 8}) && ~isnan(speedsData{i, 9}) && ~isnan(speedsData{i, 10})
+                        score = 0;
+                        maxAvgDelta = speedsData{i, 10}; % Max-Avg
+                        range = speedsData{i, 11}; % Range
+                        riderAvg = speedsData{i, 8}; % Average
+                        riderMax = speedsData{i, 9}; % Max_Speed
+                        
+                        % Condition 1: Δ(Max−Avg) ≥ 2.0 km/h
+                        if maxAvgDelta >= 2.0
+                            score = score + 1;
+                        end
+                        
+                        % Condition 2: Range ≥ 2.5 km/h
+                        if ~isnan(range) && range >= 2.5
+                            score = score + 1;
+                        end
+                        
+                        % Condition 3: Max speed within ~1 km/h of session top speed
+                        if abs(riderMax - sessionTopSpeed) <= 1.0
+                            score = score + 1;
+                        end
+                        
+                        % Condition 4: Rider avg below session avg but max very high
+                        if riderAvg < sessionAvg && riderMax >= sessionTopSpeed - 1.0
+                            score = score + 1;
+                        end
+                        
+                        speedsData{i, 12} = score; % SlipstreamLikelihood
+                    else
+                        speedsData{i, 12} = NaN;
+                    end
+                end
+                
+                % Create temporary table to sort by fastest speed
+                % Convert speed columns to numeric arrays first
+                positionCol = cell2mat(speedsData(:, 1));
+                riderCol = speedsData(:, 2);
+                speed1Col = cell2mat(speedsData(:, 3));
+                speed2Col = cell2mat(speedsData(:, 4));
+                speed3Col = cell2mat(speedsData(:, 5));
+                speed4Col = cell2mat(speedsData(:, 6));
+                speed5Col = cell2mat(speedsData(:, 7));
+                averageCol = cell2mat(speedsData(:, 8));
+                fastestSpeedCol = cell2mat(speedsData(:, 9));
+                maxAvgCol = cell2mat(speedsData(:, 10));
+                rangeCol = cell2mat(speedsData(:, 11));
+                slipstreamLikelihoodCol = cell2mat(speedsData(:, 12));
+                
+                tempTable = table(positionCol, riderCol, speed1Col, speed2Col, speed3Col, speed4Col, speed5Col, averageCol, fastestSpeedCol, maxAvgCol, rangeCol, slipstreamLikelihoodCol, ...
+                    'VariableNames', {'Position', 'Rider', 'Speed1', 'Speed2', 'Speed3', 'Speed4', 'Speed5', 'Average', 'Max_Speed', 'Max-Avg', 'Range', 'SlipstreamLikelihood'});
+                
+                % Sort by max speed (descending)
+                validMask = ~isnan(fastestSpeedCol);
+                [~, sortIdx] = sort(fastestSpeedCol(validMask), 'descend');
+                % Reconstruct full sort index
+                validIndices = find(validMask);
+                invalidIndices = find(~validMask);
+                fullSortIdx = [validIndices(sortIdx); invalidIndices'];
+                sortedTable = tempTable(fullSortIdx, :);
+                
+                % Update position column based on sorted order
+                sortedTable.Position = (1:height(sortedTable))';
+                
+                % Store SlipstreamLikelihood scores before formatting (for styling later)
+                slipstreamScores = sortedTable.SlipstreamLikelihood;
+                
+                % Format speed columns, average, Max-Avg, and Range to 1 decimal place (convert numeric to formatted strings)
+                for colIdx = 3:11 % Speed1-5, Average, Max_Speed, Max-Avg, Range
+                    colName = sortedTable.Properties.VariableNames{colIdx};
+                    colData = sortedTable.(colName);
+                    formattedCol = cell(height(sortedTable), 1);
+                    for r = 1:height(sortedTable)
+                        if isnan(colData(r))
+                            formattedCol{r} = '';
+                        else
+                            formattedCol{r} = sprintf('%.1f', colData(r));
+                        end
+                    end
+                    sortedTable.(colName) = formattedCol;
+                end
+                
+                % Format SlipstreamLikelihood as text descriptions with icons
+                colData = sortedTable.SlipstreamLikelihood;
+                formattedCol = cell(height(sortedTable), 1);
+                for r = 1:height(sortedTable)
+                    if isnan(colData(r))
+                        formattedCol{r} = '';
+                    else
+                        score = colData(r);
+                        if score <= 1
+                            formattedCol{r} = '🟢 Unlikely';
+                        elseif score == 2
+                            formattedCol{r} = '🟠 Possible';
+                        elseif score >= 3
+                            formattedCol{r} = '🔴 Very Likely';
+                        else
+                            formattedCol{r} = '';
+                        end
+                    end
+                end
+                sortedTable.SlipstreamLikelihood = formattedCol;
+                
+                % Update the table
+                if isprop(obj.SpeedsTable, 'ColumnFormat')
+                    obj.SpeedsTable.ColumnFormat = {};
+                end
+                obj.SpeedsTable.Data = sortedTable;
+                obj.SpeedsTable.ColumnName = {'Position', 'Rider', 'Speed1', 'Speed2', 'Speed3', 'Speed4', 'Speed5', 'Average', 'Max_Speed', 'Max-Avg', 'Range', 'SlipstreamLikelihood'};
+                
+                % Apply background colors to SlipstreamLikelihood column based on score
+                slipstreamColIdx = find(strcmp(sortedTable.Properties.VariableNames, 'SlipstreamLikelihood'));
+                if ~isempty(slipstreamColIdx)
+                    for r = 1:height(sortedTable)
+                        if ~isnan(slipstreamScores(r))
+                            score = slipstreamScores(r);
+                            if score <= 1
+                                % Green background for Unlikely
+                                style = uistyle('BackgroundColor', [0.7 1.0 0.7], 'HorizontalAlignment', 'center');
+                            elseif score == 2
+                                % Orange background for Possible
+                                style = uistyle('BackgroundColor', [1.0 0.8 0.5], 'HorizontalAlignment', 'center');
+                            elseif score >= 3
+                                % Red background for Very Likely
+                                style = uistyle('BackgroundColor', [1.0 0.7 0.7], 'HorizontalAlignment', 'center');
+                            else
+                                style = uistyle('HorizontalAlignment', 'center');
+                            end
+                            addStyle(obj.SpeedsTable, style, 'cell', [r, slipstreamColIdx]);
+                        end
+                    end
+                end
+                
+                % Apply heatmap to Speed1-5 columns (together) and Max_Speed column
+                obj.applySpeedsHeatmap(sortedTable, slipstreamScores);
+                
+                % Update speeds graph
+                obj.updateSpeedsGraph(sortedTable, slipstreamScores);
+                
+                % Set column widths to fill the table width (Max-Avg and Range columns will be hidden)
+                drawnow;
+                obj.fitColumnsToTableWidth(obj.SpeedsTable);
+                
+            catch ME
+                warning('RythmTab:UpdateSpeedsTableError', ...
+                    'Error updating speeds table: %s', ME.message);
+                obj.SpeedsTable.Data = {};
+                obj.SpeedsTable.ColumnName = {};
+            end
+        end
+        
+        function applySpeedsHeatmap(obj, sortedTable, slipstreamScores)
+            %APPLYSPEEDSHEATMAP Apply heatmap to Speed1-5 columns (together) and Max_Speed column
+            % Uses same color scheme as laps tables: light green to dark green at 25% transparency
+            
+            try
+                varNames = sortedTable.Properties.VariableNames;
+                
+                % Find column indices
+                speed1Idx = find(strcmp(varNames, 'Speed1'), 1);
+                speed5Idx = find(strcmp(varNames, 'Speed5'), 1);
+                maxSpeedIdx = find(strcmp(varNames, 'Max_Speed'), 1);
+                
+                if isempty(speed1Idx) || isempty(speed5Idx) || isempty(maxSpeedIdx)
+                    return;
+                end
+                
+                numRows = height(sortedTable);
+                if numRows <= 0
+                    return;
+                end
+                
+                % For Speed1-5: treat them as a group and find min/max across all 5 columns
+                % Extract numeric values from Speed1-5 (they are formatted as strings)
+                allSpeedValues = [];
+                speedColIndices = speed1Idx:speed5Idx;
+                
+                for colIdx = speedColIndices
+                    colName = varNames{colIdx};
+                    colData = sortedTable.(colName);
+                    % Convert from cell array of strings to numeric
+                    numericData = zeros(numRows, 1);
+                    for r = 1:numRows
+                        if iscell(colData)
+                            valStr = colData{r};
+                            if ischar(valStr) || isstring(valStr)
+                                numericData(r) = str2double(valStr);
+                            else
+                                numericData(r) = valStr;
+                            end
+                        elseif isnumeric(colData)
+                            numericData(r) = colData(r);
+                        end
+                    end
+                    allSpeedValues = [allSpeedValues; numericData(~isnan(numericData) & numericData > 0)];
+                end
+                
+                if isempty(allSpeedValues)
+                    return;
+                end
+                
+                minSpeed = min(allSpeedValues);
+                maxSpeed = max(allSpeedValues);
+                
+                % For Max_Speed: extract numeric values
+                maxSpeedData = sortedTable.Max_Speed;
+                maxSpeedNumeric = zeros(numRows, 1);
+                for r = 1:numRows
+                    if iscell(maxSpeedData)
+                        valStr = maxSpeedData{r};
+                        if ischar(valStr) || isstring(valStr)
+                            maxSpeedNumeric(r) = str2double(valStr);
+                        else
+                            maxSpeedNumeric(r) = valStr;
+                        end
+                    elseif isnumeric(maxSpeedData)
+                        maxSpeedNumeric(r) = maxSpeedData(r);
+                    end
+                end
+                
+                validMaxSpeeds = maxSpeedNumeric(~isnan(maxSpeedNumeric) & maxSpeedNumeric > 0);
+                if isempty(validMaxSpeeds)
+                    return;
+                end
+                
+                minMaxSpeed = min(validMaxSpeeds);
+                maxMaxSpeed = max(validMaxSpeeds);
+                
+                % 2-color gradient: Light Green -> Dark Green at 25% transparency
+                baseLightGreen = [0.6 1.0 0.6];   % Light green
+                baseDarkGreen = [0.0 0.5 0.0];    % Dark green
+                white = [1.0 1.0 1.0];            % White for blending
+                
+                % Apply 25% transparency (25% = 0.25 * color + 0.75 * white)
+                lightGreenColor = 0.25 * baseLightGreen + 0.75 * white;
+                darkGreenColor = 0.25 * baseDarkGreen + 0.75 * white;
+                
+                % Apply heatmap to Speed1-5 columns (as a group)
+                if minSpeed < maxSpeed
+                    for colIdx = speedColIndices
+                        colName = varNames{colIdx};
+                        colData = sortedTable.(colName);
+                        for r = 1:numRows
+                            % Convert to numeric
+                            if iscell(colData)
+                                valStr = colData{r};
+                                if ischar(valStr) || isstring(valStr)
+                                    val = str2double(valStr);
+                                else
+                                    val = valStr;
+                                end
+                            elseif isnumeric(colData)
+                                val = colData(r);
+                            else
+                                continue;
+                            end
+                            
+                            if ~isnan(val) && val > 0
+                                % Calculate normalized value [0, 1] based on group min/max
+                                normalizedVal = (val - minSpeed) / (maxSpeed - minSpeed);
+                                normalizedVal = max(0, min(1, normalizedVal)); % Clamp to [0, 1]
+                                
+                                % For speeds, higher is better, so reverse (higher = lighter green)
+                                normalizedVal = 1 - normalizedVal;
+                                
+                                % Interpolate between light green and dark green
+                                cellColor = lightGreenColor * (1 - normalizedVal) + darkGreenColor * normalizedVal;
+                                
+                                % Create style for this cell
+                                heatmapStyle = uistyle('BackgroundColor', cellColor, 'HorizontalAlignment', 'center');
+                                addStyle(obj.SpeedsTable, heatmapStyle, 'cell', [r, colIdx]);
+                            end
+                        end
+                    end
+                end
+                
+                % Apply heatmap to Max_Speed column
+                if minMaxSpeed < maxMaxSpeed
+                    for r = 1:numRows
+                        val = maxSpeedNumeric(r);
+                        if ~isnan(val) && val > 0
+                            % Calculate normalized value [0, 1]
+                            normalizedVal = (val - minMaxSpeed) / (maxMaxSpeed - minMaxSpeed);
+                            normalizedVal = max(0, min(1, normalizedVal)); % Clamp to [0, 1]
+                            
+                            % For speeds, higher is better, so reverse (higher = lighter green)
+                            normalizedVal = 1 - normalizedVal;
+                            
+                            % Interpolate between light green and dark green
+                            cellColor = lightGreenColor * (1 - normalizedVal) + darkGreenColor * normalizedVal;
+                            
+                            % Create style for this cell
+                            heatmapStyle = uistyle('BackgroundColor', cellColor, 'HorizontalAlignment', 'center');
+                            addStyle(obj.SpeedsTable, heatmapStyle, 'cell', [r, maxSpeedIdx]);
+                        end
+                    end
+                end
+                
+            catch ME
+                warning('RythmTab:ApplySpeedsHeatmapError', ...
+                    'Error applying speeds heatmap: %s', ME.message);
+            end
+        end
+        
+        function updateSpeedsGraph(obj, sortedTable, slipstreamScores)
+            %UPDATESPEEDSGRAPH Update graph showing riders vs Average and Max_Speed
+            
+            try
+                if isempty(sortedTable) || height(sortedTable) == 0
+                    cla(obj.SpeedsAxes);
+                    return;
+                end
+                
+                % Extract rider names, Average, and Max_Speed
+                riderNames = sortedTable.Rider;
+                averageData = sortedTable.Average;
+                maxSpeedData = sortedTable.Max_Speed;
+                
+                % Convert to numeric arrays
+                numRiders = height(sortedTable);
+                riders = cell(numRiders, 1);
+                averages = zeros(numRiders, 1);
+                maxSpeeds = zeros(numRiders, 1);
+                
+                for r = 1:numRiders
+                    if iscell(riderNames)
+                        riders{r} = char(riderNames{r});
+                    elseif isstring(riderNames)
+                        riders{r} = char(riderNames(r));
+                    else
+                        riders{r} = char(riderNames(r));
+                    end
+                    
+                    % Convert Average to numeric
+                    if iscell(averageData)
+                        avgStr = averageData{r};
+                        if ischar(avgStr) || isstring(avgStr)
+                            averages(r) = str2double(avgStr);
+                        else
+                            averages(r) = avgStr;
+                        end
+                    elseif isnumeric(averageData)
+                        averages(r) = averageData(r);
+                    end
+                    
+                    % Convert Max_Speed to numeric
+                    if iscell(maxSpeedData)
+                        maxStr = maxSpeedData{r};
+                        if ischar(maxStr) || isstring(maxStr)
+                            maxSpeeds(r) = str2double(maxStr);
+                        else
+                            maxSpeeds(r) = maxStr;
+                        end
+                    elseif isnumeric(maxSpeedData)
+                        maxSpeeds(r) = maxSpeedData(r);
+                    end
+                end
+                
+                % Filter out NaN values
+                validMask = ~isnan(averages) & ~isnan(maxSpeeds);
+                if sum(validMask) == 0
+                    cla(obj.SpeedsAxes);
+                    return;
+                end
+                
+                validRiders = riders(validMask);
+                validAverages = averages(validMask);
+                validMaxSpeeds = maxSpeeds(validMask);
+                
+                % Clear axes
+                cla(obj.SpeedsAxes);
+                
+                % Create x positions for riders
+                xPos = 1:length(validRiders);
+                
+                % Calculate polynomial regression for Average (order 2 for curved fit)
+                if length(xPos) > 2
+                    % Use polyfit to get polynomial regression coefficients (order 2 = quadratic)
+                    p = polyfit(xPos, validAverages, 2); % 2nd degree polynomial (quadratic)
+                    yFitAverage = polyval(p, xPos); % Calculate fitted values
+                elseif length(xPos) > 1
+                    % Fall back to linear if not enough points
+                    p = polyfit(xPos, validAverages, 1);
+                    yFitAverage = polyval(p, xPos);
+                else
+                    yFitAverage = validAverages; % If only one point, use the value itself
+                end
+                
+                % Calculate polynomial regression for Max Speed (order 2 for curved fit)
+                if length(xPos) > 2
+                    % Use polyfit to get polynomial regression coefficients (order 2 = quadratic)
+                    p = polyfit(xPos, validMaxSpeeds, 2); % 2nd degree polynomial (quadratic)
+                    yFitMaxSpeed = polyval(p, xPos); % Calculate fitted values
+                elseif length(xPos) > 1
+                    % Fall back to linear if not enough points
+                    p = polyfit(xPos, validMaxSpeeds, 1);
+                    yFitMaxSpeed = polyval(p, xPos);
+                else
+                    yFitMaxSpeed = validMaxSpeeds; % If only one point, use the value itself
+                end
+                
+                % Plot Average and Max_Speed
+                hold(obj.SpeedsAxes, 'on');
+                plot(obj.SpeedsAxes, xPos, validAverages, '-o', 'Color', [0.2 0.6 1.0], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Average');
+                plot(obj.SpeedsAxes, xPos, validMaxSpeeds, '-s', 'Color', [1.0 0.3 0.3], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Max Speed');
+                % Plot polynomial regression lines
+                plot(obj.SpeedsAxes, xPos, yFitAverage, '--', 'Color', [0.2 0.6 1.0], 'LineWidth', 1.5, 'DisplayName', 'Average Trend');
+                plot(obj.SpeedsAxes, xPos, yFitMaxSpeed, '--', 'Color', [1.0 0.3 0.3], 'LineWidth', 1.5, 'DisplayName', 'Max Speed Trend');
+                hold(obj.SpeedsAxes, 'off');
+                
+                % Set x-axis labels to rider names
+                obj.SpeedsAxes.XTick = xPos;
+                obj.SpeedsAxes.XTickLabel = validRiders;
+                obj.SpeedsAxes.XTickLabelRotation = 45;
+                obj.SpeedsAxes.XLim = [0.5, length(validRiders) + 0.5];
+                
+                % Set labels
+                obj.SpeedsAxes.XLabel.String = 'Riders';
+                obj.SpeedsAxes.YLabel.String = 'Speed (km/h)';
+                obj.SpeedsAxes.Title.String = 'Average vs Max Speed';
+                
+                % Add legend
+                legend(obj.SpeedsAxes, 'show', 'Location', 'best', 'TextColor', [1 1 1], 'Color', [0.3 0.3 0.3]);
+                
+                % Refresh
+                drawnow;
+                
+            catch ME
+                warning('RythmTab:UpdateSpeedsGraphError', ...
+                    'Error updating speeds graph: %s', ME.message);
+            end
         end
         
         function resizeSummaryTable(obj, summaryPanel, tableNum)
