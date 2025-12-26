@@ -128,6 +128,8 @@ classdef RythmTab < handle
             obj.RidersTable.ColumnEditable = false;
             obj.RidersTable.RowName = [];
             obj.RidersTable.ColumnWidth = 'auto';
+            % Prevent cell selection and copying
+            obj.RidersTable.CellSelectionCallback = @(src, event) obj.preventTableSelection(src, event);
             
             % Apply center alignment style to all cells
             centerStyle = uistyle('HorizontalAlignment', 'center');
@@ -209,6 +211,8 @@ classdef RythmTab < handle
             if isprop(obj.SectorsTable, 'ColumnFormat')
                 obj.SectorsTable.ColumnFormat = {};
             end
+            % Prevent cell selection and copying
+            obj.SectorsTable.CellSelectionCallback = @(src, event) obj.preventTableSelection(src, event);
             
             % Apply center alignment style to all cells
             centerStyle = uistyle('HorizontalAlignment', 'center');
@@ -227,6 +231,8 @@ classdef RythmTab < handle
             if isprop(obj.SectorsSummaryTable, 'ColumnFormat')
                 obj.SectorsSummaryTable.ColumnFormat = {};
             end
+            % Prevent cell selection and copying
+            obj.SectorsSummaryTable.CellSelectionCallback = @(src, event) obj.preventTableSelection(src, event);
             
             % Apply center alignment style to summary table
             centerStyleSummary = uistyle('HorizontalAlignment', 'center');
@@ -257,6 +263,8 @@ classdef RythmTab < handle
             if isprop(obj.SpeedsTable, 'ColumnFormat')
                 obj.SpeedsTable.ColumnFormat = {};
             end
+            % Prevent cell selection and copying
+            obj.SpeedsTable.CellSelectionCallback = @(src, event) obj.preventTableSelection(src, event);
             
             % Apply center alignment style to all cells
             centerStyleSpeeds = uistyle('HorizontalAlignment', 'center');
@@ -328,6 +336,8 @@ classdef RythmTab < handle
                 obj.LapsTable1.ColumnWidth = 'auto'; % Will be set dynamically when data loads
                 obj.LapsTable1.Data = {};
                 obj.LapsTable1.ColumnName = {};
+                % Prevent cell selection and copying
+                obj.LapsTable1.CellSelectionCallback = @(src, event) obj.preventTableSelection(src, event);
             else
                 obj.LapsTable2 = uitable(sectionGrid);
                 obj.LapsTable2.Layout.Row = 2;
@@ -337,6 +347,8 @@ classdef RythmTab < handle
                 obj.LapsTable2.ColumnWidth = 'auto'; % Will be set dynamically when data loads
                 obj.LapsTable2.Data = {};
                 obj.LapsTable2.ColumnName = {};
+                % Prevent cell selection and copying
+                obj.LapsTable2.CellSelectionCallback = @(src, event) obj.preventTableSelection(src, event);
             end
             
             % Summary table panel (1/3 height)
@@ -354,6 +366,8 @@ classdef RythmTab < handle
                 obj.LapsSummaryTable1.ColumnWidth = 'auto';
                 obj.LapsSummaryTable1.Data = {};
                 obj.LapsSummaryTable1.ColumnName = {};
+                % Prevent cell selection and copying
+                obj.LapsSummaryTable1.CellSelectionCallback = @(src, event) obj.preventTableSelection(src, event);
             else
                 obj.LapsSummaryTable2 = uitable(summaryPanel);
                 obj.LapsSummaryTable2.Position = [1 1 500 100]; % Temporary, will be updated
@@ -362,6 +376,8 @@ classdef RythmTab < handle
                 obj.LapsSummaryTable2.ColumnWidth = 'auto';
                 obj.LapsSummaryTable2.Data = {};
                 obj.LapsSummaryTable2.ColumnName = {};
+                % Prevent cell selection and copying
+                obj.LapsSummaryTable2.CellSelectionCallback = @(src, event) obj.preventTableSelection(src, event);
             end
             
             % Set AutoResizeChildren to 'off' so SizeChangedFcn works
@@ -578,6 +594,12 @@ classdef RythmTab < handle
                 
                 % Apply alternating row colors: white for odd rows, light grey for even rows
                 obj.applyAlternatingRowColors();
+                
+                % Apply bike column styling (KTM = orange, HONDA = dark blue with white text)
+                obj.applyBikeColumnStyling();
+                
+                % Apply bike column styling (KTM = orange, HONDA = dark blue with white text)
+                obj.applyBikeColumnStyling();
             else
                 obj.TableData = table();
                 obj.RidersTable.Data = {};
@@ -762,6 +784,9 @@ classdef RythmTab < handle
             
             % Re-apply alternating row colors (same as initial setup)
             obj.applyAlternatingRowColors();
+            
+            % Re-apply bike column styling (KTM = orange, HONDA = dark blue with white text)
+            obj.applyBikeColumnStyling();
         end
         
         function updateRowHighlighting(obj)
@@ -777,11 +802,14 @@ classdef RythmTab < handle
                 removeStyle(obj.RidersTable, styleObjs(i));
             end
             
-            % Re-add center alignment
-            centerStyle = uistyle('HorizontalAlignment', 'center');
-            addStyle(obj.RidersTable, centerStyle);
-            
-            % Get rider name column
+                % Re-add center alignment
+                centerStyle = uistyle('HorizontalAlignment', 'center');
+                addStyle(obj.RidersTable, centerStyle);
+                
+                % Re-apply bike column styling (KTM = orange, HONDA = dark blue with white text)
+                obj.applyBikeColumnStyling();
+                
+                % Get rider name column
             varNames = obj.TableData.Properties.VariableNames;
             riderNameCol = '';
             for i = 1:length(varNames)
@@ -835,6 +863,96 @@ classdef RythmTab < handle
                         addStyle(obj.RidersTable, blueStyle, 'cell', cellIndices);
                     end
                 end
+            end
+        end
+        
+        function preventTableSelection(obj, src, event)
+            %PREVENTTABLESELECTION Prevent cell selection and copying in tables
+            % Immediately clear any selection that occurs
+            if ~isempty(event.Indices)
+                % Clear the selection immediately
+                drawnow;
+                src.Selection = [];
+            end
+        end
+        
+        function applyBikeColumnStyling(obj)
+            %APPLYBIKECOLUMNSTYLING Apply background colors to bike column based on value
+            % KTM = orange background, HONDA = dark blue background with white foreground
+            
+            try
+                if isempty(obj.RidersTable.Data) || ~istable(obj.RidersTable.Data)
+                    return;
+                end
+                
+                % Find bike column index
+                tableColumnNames = obj.RidersTable.ColumnName;
+                bikeColIdx = find(strcmp(tableColumnNames, 'bike'), 1);
+                
+                if isempty(bikeColIdx)
+                    % Try case-insensitive search
+                    for i = 1:length(tableColumnNames)
+                        if strcmpi(tableColumnNames{i}, 'bike')
+                            bikeColIdx = i;
+                            break;
+                        end
+                    end
+                end
+                
+                if isempty(bikeColIdx)
+                    return; % Bike column not found
+                end
+                
+                % Get bike column data
+                tableData = obj.RidersTable.Data;
+                varNames = tableData.Properties.VariableNames;
+                
+                % Find bike variable name (might be 'bike' or something else)
+                bikeVarName = '';
+                for i = 1:length(varNames)
+                    if strcmpi(varNames{i}, 'bike')
+                        bikeVarName = varNames{i};
+                        break;
+                    end
+                end
+                
+                if isempty(bikeVarName)
+                    return;
+                end
+                
+                bikeData = tableData.(bikeVarName);
+                numRows = height(tableData);
+                
+                % Apply styling to each cell in the bike column
+                for r = 1:numRows
+                    bikeValue = bikeData(r);
+                    
+                    % Convert to string for comparison
+                    if iscell(bikeValue)
+                        bikeStr = char(bikeValue{1});
+                    elseif isstring(bikeValue) || ischar(bikeValue)
+                        bikeStr = char(bikeValue);
+                    else
+                        bikeStr = char(string(bikeValue));
+                    end
+                    
+                    % Convert to uppercase for case-insensitive comparison
+                    bikeStrUpper = upper(bikeStr);
+                    
+                    if strcmp(bikeStrUpper, 'KTM')
+                        % Orange background for KTM
+                        style = uistyle('BackgroundColor', [1.0 0.5 0.0], 'HorizontalAlignment', 'center');
+                        addStyle(obj.RidersTable, style, 'cell', [r, bikeColIdx]);
+                    elseif strcmp(bikeStrUpper, 'HONDA')
+                        % Dark blue background with white foreground for HONDA
+                        style = uistyle('BackgroundColor', [0.0 0.2 0.5], 'FontColor', [1.0 1.0 1.0], 'HorizontalAlignment', 'center');
+                        addStyle(obj.RidersTable, style, 'cell', [r, bikeColIdx]);
+                    end
+                end
+                
+            catch ME
+                warning('RythmTab:ApplyBikeColumnStylingError', ...
+                    'Error applying bike column styling: %s', ME.message);
             end
         end
         
@@ -1412,14 +1530,14 @@ classdef RythmTab < handle
                         % Only apply heatmap if we have valid data with range
                         if ~isempty(minVal) && ~isempty(maxVal) && ~isnan(minVal) && ~isnan(maxVal) && minVal < maxVal
                             % 2-color gradient: Light Green -> Dark Green
-                            % Make 25% transparent by blending with white (25% = 0.25 * color + 0.75 * white)
+                            % 50% opacity (50% transparency = 0.5 * color + 0.5 * white)
                             baseLightGreen = [0.6 1.0 0.6];   % Light green
                             baseDarkGreen = [0.0 0.5 0.0];    % Dark green
                             white = [1.0 1.0 1.0];            % White for blending
                             
-                            % Apply 25% transparency (25% = 0.25 * color + 0.75 * white)
-                            lightGreenColor = 0.25 * baseLightGreen + 0.75 * white;
-                            darkGreenColor = 0.25 * baseDarkGreen + 0.75 * white;
+                            % Apply 50% opacity (0.5 * color + 0.5 * white)
+                            lightGreenColor = 0.5 * baseLightGreen + 0.5 * white;
+                            darkGreenColor = 0.5 * baseDarkGreen + 0.5 * white;
                             
                             % For speed columns, reverse the direction (higher is better)
                             % For lap_time and sectors, lower is better (normal direction)
@@ -1791,10 +1909,10 @@ classdef RythmTab < handle
                 obj.fitColumnsToTableWidth(summaryTableObj);
                 
                 % Apply center alignment and dark green background to all cells except first column
-                % Get the darkest green color from heatmap (25% transparency)
+                % Get the darkest green color from heatmap (70% transparency, 30% opacity)
                 baseDarkGreen = [0.0 0.5 0.0];    % Base dark green
                 white = [1.0 1.0 1.0];            % White for blending
-                darkGreenColor = 0.25 * baseDarkGreen + 0.75 * white;  % 25% transparency
+                darkGreenColor = 0.3 * baseDarkGreen + 0.7 * white;  % 30% opacity
                 
                 % Get table dimensions
                 numRows = height(summaryTable);
@@ -2836,12 +2954,18 @@ classdef RythmTab < handle
             % Uses same color scheme as laps tables: light green to dark green at 25% transparency
             
             try
+                % Get column names from the actual table (not sortedTable) to ensure correct indices
+                if isempty(obj.SpeedsTable.ColumnName) || isempty(obj.SpeedsTable.Data)
+                    return;
+                end
+                
+                tableColumnNames = obj.SpeedsTable.ColumnName;
                 varNames = sortedTable.Properties.VariableNames;
                 
-                % Find column indices
-                speed1Idx = find(strcmp(varNames, 'Speed1'), 1);
-                speed5Idx = find(strcmp(varNames, 'Speed5'), 1);
-                maxSpeedIdx = find(strcmp(varNames, 'Max_Speed'), 1);
+                % Find column indices in the displayed table (not the sortedTable)
+                speed1Idx = find(strcmp(tableColumnNames, 'Speed1'), 1);
+                speed5Idx = find(strcmp(tableColumnNames, 'Speed5'), 1);
+                maxSpeedIdx = find(strcmp(tableColumnNames, 'Max_Speed'), 1);
                 
                 if isempty(speed1Idx) || isempty(speed5Idx) || isempty(maxSpeedIdx)
                     return;
@@ -2855,26 +2979,41 @@ classdef RythmTab < handle
                 % For Speed1-5: treat them as a group and find min/max across all 5 columns
                 % Extract numeric values from Speed1-5 (they are formatted as strings)
                 allSpeedValues = [];
-                speedColIndices = speed1Idx:speed5Idx;
+                speedColNames = {'Speed1', 'Speed2', 'Speed3', 'Speed4', 'Speed5'};
+                speedColIndices = [];
                 
-                for colIdx = speedColIndices
-                    colName = varNames{colIdx};
-                    colData = sortedTable.(colName);
-                    % Convert from cell array of strings to numeric
-                    numericData = zeros(numRows, 1);
-                    for r = 1:numRows
-                        if iscell(colData)
-                            valStr = colData{r};
-                            if ischar(valStr) || isstring(valStr)
-                                numericData(r) = str2double(valStr);
-                            else
-                                numericData(r) = valStr;
-                            end
-                        elseif isnumeric(colData)
-                            numericData(r) = colData(r);
-                        end
+                % Build list of column indices in the displayed table
+                for i = 1:length(speedColNames)
+                    colIdx = find(strcmp(tableColumnNames, speedColNames{i}), 1);
+                    if ~isempty(colIdx)
+                        speedColIndices(end+1) = colIdx;
                     end
-                    allSpeedValues = [allSpeedValues; numericData(~isnan(numericData) & numericData > 0)];
+                end
+                
+                if isempty(speedColIndices)
+                    return;
+                end
+                
+                % Extract all speed values from sortedTable for min/max calculation
+                for colName = speedColNames
+                    if ismember(colName{1}, varNames)
+                        colData = sortedTable.(colName{1});
+                        % Convert from cell array of strings to numeric
+                        numericData = zeros(numRows, 1);
+                        for r = 1:numRows
+                            if iscell(colData)
+                                valStr = colData{r};
+                                if ischar(valStr) || isstring(valStr)
+                                    numericData(r) = str2double(valStr);
+                                else
+                                    numericData(r) = valStr;
+                                end
+                            elseif isnumeric(colData)
+                                numericData(r) = colData(r);
+                            end
+                        end
+                        allSpeedValues = [allSpeedValues; numericData(~isnan(numericData) & numericData > 0)];
+                    end
                 end
                 
                 if isempty(allSpeedValues)
@@ -2908,56 +3047,55 @@ classdef RythmTab < handle
                 minMaxSpeed = min(validMaxSpeeds);
                 maxMaxSpeed = max(validMaxSpeeds);
                 
-                % 2-color gradient: Light Green -> Dark Green at 25% transparency
-                baseLightGreen = [0.6 1.0 0.6];   % Light green
-                baseDarkGreen = [0.0 0.5 0.0];    % Dark green
-                white = [1.0 1.0 1.0];            % White for blending
-                
-                % Apply 25% transparency (25% = 0.25 * color + 0.75 * white)
-                lightGreenColor = 0.25 * baseLightGreen + 0.75 * white;
-                darkGreenColor = 0.25 * baseDarkGreen + 0.75 * white;
+                % 2-color gradient: Light Green -> Dark Green (full opacity, no transparency)
+                lightGreenColor = [0.6 1.0 0.6];   % Light green
+                darkGreenColor = [0.0 0.5 0.0];    % Dark green
                 
                 % Apply heatmap to Speed1-5 columns (as a group)
-                if minSpeed < maxSpeed
-                    for colIdx = speedColIndices
-                        colName = varNames{colIdx};
-                        colData = sortedTable.(colName);
-                        for r = 1:numRows
-                            % Convert to numeric
-                            if iscell(colData)
-                                valStr = colData{r};
-                                if ischar(valStr) || isstring(valStr)
-                                    val = str2double(valStr);
+                if minSpeed < maxSpeed && ~isempty(speedColIndices)
+                    for tableColIdx = speedColIndices
+                        % Get the column name from the displayed table
+                        colName = tableColumnNames{tableColIdx};
+                        % Get data from sortedTable using the variable name
+                        if ismember(colName, varNames)
+                            colData = sortedTable.(colName);
+                            for r = 1:numRows
+                                % Convert to numeric
+                                if iscell(colData)
+                                    valStr = colData{r};
+                                    if ischar(valStr) || isstring(valStr)
+                                        val = str2double(valStr);
+                                    else
+                                        val = valStr;
+                                    end
+                                elseif isnumeric(colData)
+                                    val = colData(r);
                                 else
-                                    val = valStr;
+                                    continue;
                                 end
-                            elseif isnumeric(colData)
-                                val = colData(r);
-                            else
-                                continue;
-                            end
-                            
-                            if ~isnan(val) && val > 0
-                                % Calculate normalized value [0, 1] based on group min/max
-                                normalizedVal = (val - minSpeed) / (maxSpeed - minSpeed);
-                                normalizedVal = max(0, min(1, normalizedVal)); % Clamp to [0, 1]
                                 
-                                % For speeds, higher is better, so reverse (higher = lighter green)
-                                normalizedVal = 1 - normalizedVal;
-                                
-                                % Interpolate between light green and dark green
-                                cellColor = lightGreenColor * (1 - normalizedVal) + darkGreenColor * normalizedVal;
-                                
-                                % Create style for this cell
-                                heatmapStyle = uistyle('BackgroundColor', cellColor, 'HorizontalAlignment', 'center');
-                                addStyle(obj.SpeedsTable, heatmapStyle, 'cell', [r, colIdx]);
+                                if ~isnan(val) && val > 0
+                                    % Calculate normalized value [0, 1] based on group min/max
+                                    normalizedVal = (val - minSpeed) / (maxSpeed - minSpeed);
+                                    normalizedVal = max(0, min(1, normalizedVal)); % Clamp to [0, 1]
+                                    
+                                    % For speeds, higher is better, so reverse (higher = lighter green)
+                                    normalizedVal = 1 - normalizedVal;
+                                    
+                                    % Interpolate between light green and dark green
+                                    cellColor = lightGreenColor * (1 - normalizedVal) + darkGreenColor * normalizedVal;
+                                    
+                                    % Create style for this cell using the table column index
+                                    heatmapStyle = uistyle('BackgroundColor', cellColor, 'HorizontalAlignment', 'center');
+                                    addStyle(obj.SpeedsTable, heatmapStyle, 'cell', [r, tableColIdx]);
+                                end
                             end
                         end
                     end
                 end
                 
                 % Apply heatmap to Max_Speed column
-                if minMaxSpeed < maxMaxSpeed
+                if minMaxSpeed < maxMaxSpeed && ~isempty(maxSpeedIdx)
                     for r = 1:numRows
                         val = maxSpeedNumeric(r);
                         if ~isnan(val) && val > 0
@@ -2971,7 +3109,7 @@ classdef RythmTab < handle
                             % Interpolate between light green and dark green
                             cellColor = lightGreenColor * (1 - normalizedVal) + darkGreenColor * normalizedVal;
                             
-                            % Create style for this cell
+                            % Create style for this cell using the table column index
                             heatmapStyle = uistyle('BackgroundColor', cellColor, 'HorizontalAlignment', 'center');
                             addStyle(obj.SpeedsTable, heatmapStyle, 'cell', [r, maxSpeedIdx]);
                         end
